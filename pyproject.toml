@@ -1,0 +1,8 @@
+[project]
+name = "feishu-issue-tracker"
+version = "0.1.0"
+description = "Local-first Feishu issue tracker sync utilities."
+requires-python = ">=3.12"
+
+[tool.unittest]
+testpaths = ["tests"]
