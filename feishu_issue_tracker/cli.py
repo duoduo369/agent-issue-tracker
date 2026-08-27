@@ -6,9 +6,16 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from feishu_issue_tracker.config import resolve_config
-from feishu_issue_tracker.feishu_cli import LarkCliError, LarkCliFeishuClient
-from feishu_issue_tracker.layout import FeatureResolutionError, RepoRootNotFoundError, ScratchLayoutProvider, find_repo_root
+from feishu_issue_tracker.backend import PersistenceBackend
+from feishu_issue_tracker.config import ResolvedConfig, resolve_config
+from feishu_issue_tracker.feishu_backend import FeishuPersistenceBackend
+from feishu_issue_tracker.feishu_cli import LarkCliError
+from feishu_issue_tracker.layout import (
+    FeatureResolutionError,
+    RepoRootNotFoundError,
+    ScratchLayoutProvider,
+    find_repo_root,
+)
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullService
 from feishu_issue_tracker.push_service import PushConfirmationRequired, PushService
 
@@ -16,17 +23,19 @@ from feishu_issue_tracker.push_service import PushConfirmationRequired, PushServ
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    backend_name: str | None = None
 
     try:
         repo_root = find_repo_root(Path.cwd())
         resolved_config = resolve_config(repo_root=repo_root)
-        client = LarkCliFeishuClient()
+        backend_name = resolved_config.backend
 
         if resolved_config.missing_keys:
             print(
                 json.dumps(
                     {
                         "ok": False,
+                        "backend": resolved_config.backend,
                         "error": "missing_config",
                         "missing_keys": resolved_config.missing_keys,
                         "user_config_path": str(resolved_config.user_config_path),
@@ -40,8 +49,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
 
+        backend = resolve_backend(resolved_config=resolved_config)
+        layout_provider = ScratchLayoutProvider()
+
         if args.command == "push":
-            service = PushService(layout_provider=ScratchLayoutProvider(), feishu_client=client)
+            service = PushService(layout_provider=layout_provider, backend=backend)
             if args.confirm:
                 result = service.execute_push(
                     repo_root=repo_root,
@@ -52,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 payload = {
                     "ok": True,
+                    "backend": backend.backend_name,
                     "mode": "execute",
                     "preview": asdict(result.preview),
                     "push_result": result.push_result,
@@ -65,11 +78,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 payload = {
                     "ok": True,
+                    "backend": backend.backend_name,
                     "mode": "preview",
                     "preview": asdict(preview),
                 }
         else:
-            service = PullService(layout_provider=ScratchLayoutProvider(), feishu_client=client)
+            service = PullService(layout_provider=layout_provider, backend=backend)
             if args.confirm:
                 result = service.execute_pull(
                     repo_root=repo_root,
@@ -80,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 payload = {
                     "ok": True,
+                    "backend": backend.backend_name,
                     "mode": "execute",
                     "preview": asdict(result.preview),
                     "pull_result": result.pull_result,
@@ -93,19 +108,24 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 payload = {
                     "ok": True,
+                    "backend": backend.backend_name,
                     "mode": "preview",
                     "preview": asdict(preview),
                 }
         print(json.dumps(payload, indent=2))
         return 0
     except (FeatureResolutionError, RepoRootNotFoundError, ValueError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+        payload = {"ok": False, "error": str(exc)}
+        if backend_name:
+            payload["backend"] = backend_name
+        print(json.dumps(payload, indent=2))
         return 1
     except PushConfirmationRequired as exc:
         print(
             json.dumps(
                 {
                     "ok": False,
+                    "backend": exc.preview.backend_name,
                     "error": "confirmation_required",
                     "preview": asdict(exc.preview),
                 },
@@ -118,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "ok": False,
+                    "backend": exc.preview.backend_name,
                     "error": "confirmation_required",
                     "preview": asdict(exc.preview),
                 },
@@ -130,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "ok": False,
+                    "backend": backend_name,
                     "error": getattr(exc, "status", "command_error"),
                     "hint": getattr(exc, "hint", None) or str(exc),
                     "recommended_command": getattr(exc, "recommended_command", None),
@@ -151,6 +173,14 @@ def build_parser() -> argparse.ArgumentParser:
     pull_parser.add_argument("--feature")
     pull_parser.add_argument("--confirm", action="store_true")
     return parser
+
+
+def resolve_backend(*, resolved_config: ResolvedConfig) -> PersistenceBackend:
+    if resolved_config.backend == "feishu":
+        return FeishuPersistenceBackend()
+    if resolved_config.backend == "git":
+        raise ValueError("Backend 'git' is not implemented yet.")
+    raise ValueError(f"Unsupported backend {resolved_config.backend!r}.")
 
 
 if __name__ == "__main__":

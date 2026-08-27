@@ -1,1 +1,1 @@
-"""Local-first Feishu issue tracker sync."""
+"""Local-first issue tracker sync with pluggable persistence backends."""
