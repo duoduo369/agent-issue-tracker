@@ -30,6 +30,7 @@ class PullPreview:
     local_only_canonical: list[str]
     remote_extra_files: list[str]
     local_extra_files: list[str]
+    overwrite_hint: str
     confirmation_required: bool
 
 
@@ -122,6 +123,10 @@ class PullService:
             local_only_canonical=status_result.local_only,
             remote_extra_files=remote_extra_files,
             local_extra_files=local_extra_files,
+            overwrite_hint=(
+                "Pull treats the tracker workspace copy as the source of truth and "
+                "restores canonical files over the source repo."
+            ),
             confirmation_required=confirmation_required,
         )
 

@@ -129,6 +129,7 @@ class PullServiceTests(unittest.TestCase):
         self.assertEqual(preview.local_only_canonical, ["map.md"])
         self.assertEqual(preview.remote_extra_files, ["notes.txt"])
         self.assertEqual(preview.local_extra_files, ["draft.txt"])
+        self.assertIn("source of truth", preview.overwrite_hint)
         self.assertTrue(preview.confirmation_required)
         self.assertEqual(preview.backend_name, "feishu")
         self.assertEqual(preview.tracker_feature_locator, "root-folder/remote-repo/feature-a")

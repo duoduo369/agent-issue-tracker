@@ -7,8 +7,9 @@ from pathlib import Path
 from feishu_issue_tracker.backend import PersistenceBackendError
 from feishu_issue_tracker.config import GIT_REPO_PATH_KEY, ResolvedConfig
 from feishu_issue_tracker.layout import ScratchLayoutProvider
+from feishu_issue_tracker.pull_service import PullService
 from feishu_issue_tracker.push_service import PushService
-from feishu_issue_tracker.sidecar import FeatureSidecar
+from feishu_issue_tracker.sidecar import FeatureSidecar, sidecar_path
 
 
 def _git(
@@ -96,11 +97,10 @@ class GitPersistenceBackendTests(unittest.TestCase):
 
     def test_push_copies_bundle_commits_and_pushes(self) -> None:
         feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
-        (feature_dir / "issues").mkdir(parents=True)
-        (feature_dir / "issues" / "stale.md").write_text("# stale\n", encoding="utf-8")
+        feature_dir.mkdir(parents=True)
         (feature_dir / "notes.txt").write_text("keep me\n", encoding="utf-8")
         _git(self.tracker_workspace, "add", ".")
-        _git(self.tracker_workspace, "commit", "-m", "add stale tracker files")
+        _git(self.tracker_workspace, "commit", "-m", "add tracker files")
         _git(self.tracker_workspace, "push")
 
         staging_dir = self.root / "push-staging"
@@ -122,7 +122,6 @@ class GitPersistenceBackendTests(unittest.TestCase):
             (feature_dir / "issues" / "01.md").read_text(encoding="utf-8"),
             "# pushed issue\n",
         )
-        self.assertFalse((feature_dir / "issues" / "stale.md").exists())
         self.assertEqual((feature_dir / "notes.txt").read_text(encoding="utf-8"), "keep me\n")
         self.assertTrue(result["summary"]["committed"])
         self.assertTrue(result["summary"]["pushed"])
@@ -132,7 +131,24 @@ class GitPersistenceBackendTests(unittest.TestCase):
         _git(self.root, "clone", str(self.remote_repo), str(verification_clone))
         pushed_feature_dir = verification_clone / self.source_repo.name / "feature-a"
         self.assertTrue((pushed_feature_dir / "spec.md").exists())
-        self.assertFalse((pushed_feature_dir / "issues" / "stale.md").exists())
+
+    def test_delete_remote_paths_removes_requested_canonical_files(self) -> None:
+        feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
+        (feature_dir / "issues").mkdir(parents=True)
+        (feature_dir / "issues" / "stale.md").write_text("# stale\n", encoding="utf-8")
+        (feature_dir / "notes.txt").write_text("keep me\n", encoding="utf-8")
+
+        from feishu_issue_tracker.git_backend import GitPersistenceBackend
+
+        backend = GitPersistenceBackend(tracker_repo_path=self.tracker_workspace)
+        deleted = backend.delete_remote_paths(
+            remote_locator=str(feature_dir),
+            rel_paths=["issues/stale.md"],
+        )
+
+        self.assertEqual(deleted, 1)
+        self.assertFalse((feature_dir / "issues" / "stale.md").exists())
+        self.assertEqual((feature_dir / "notes.txt").read_text(encoding="utf-8"), "keep me\n")
 
     def test_push_retries_after_rebase_when_remote_moves_first(self) -> None:
         collaborator = self.root / "collaborator"
@@ -202,14 +218,22 @@ class GitPersistenceBackendTests(unittest.TestCase):
             (staging_dir / "issues" / "01.md").read_text(encoding="utf-8"),
             "# remote issue\n",
         )
-        self.assertEqual((staging_dir / "notes.txt").read_text(encoding="utf-8"), "remote extra\n")
         self.assertTrue(result["summary"]["updated_workspace"])
 
-    def test_push_service_ignores_feishu_sidecar_for_git_backend(self) -> None:
+    def test_push_service_preview_matches_common_semantics_for_git_backend(self) -> None:
         feature_dir = self.source_repo / ".scratch" / "feature-a"
         (feature_dir / "issues").mkdir(parents=True)
         (feature_dir / "spec.md").write_text("# local spec\n", encoding="utf-8")
-        (feature_dir / "issues" / "01.md").write_text("# local issue\n", encoding="utf-8")
+        (feature_dir / "map.md").write_text("# local map\n", encoding="utf-8")
+        (feature_dir / "issues" / "01.md").write_text("# shared issue\n", encoding="utf-8")
+        (feature_dir / "draft.txt").write_text("local extra\n", encoding="utf-8")
+        tracker_feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
+        (tracker_feature_dir / "issues").mkdir(parents=True)
+        (tracker_feature_dir / "spec.md").write_text("# remote spec\n", encoding="utf-8")
+        (tracker_feature_dir / "issues" / "01.md").write_text("# shared issue\n", encoding="utf-8")
+        (tracker_feature_dir / "issues" / "02.md").write_text("# remote only\n", encoding="utf-8")
+        (tracker_feature_dir / "notes.txt").write_text("remote extra\n", encoding="utf-8")
+
         FeatureSidecar(
             backend_name="feishu",
             feature_name="feature-a",
@@ -241,6 +265,153 @@ class GitPersistenceBackendTests(unittest.TestCase):
         self.assertEqual(preview.backend_name, "git")
         self.assertEqual(preview.tracker_root_locator, str(self.tracker_workspace))
         self.assertNotEqual(preview.tracker_root_locator, "wrong-root")
+        self.assertEqual(preview.will_create, ["map.md"])
+        self.assertEqual(preview.will_overwrite, ["spec.md"])
+        self.assertEqual(preview.unchanged, ["issues/01.md"])
+        self.assertEqual(preview.remote_only_canonical, ["issues/02.md"])
+        self.assertEqual(preview.remote_extra_files, ["notes.txt"])
+        self.assertEqual(preview.local_extra_files, ["draft.txt"])
+        self.assertTrue(preview.confirmation_required)
+
+    def test_execute_push_deletes_remote_only_canonical_and_writes_git_sidecar(self) -> None:
+        feature_dir = self.source_repo / ".scratch" / "feature-a"
+        (feature_dir / "issues").mkdir(parents=True)
+        (feature_dir / "spec.md").write_text("# local spec\n", encoding="utf-8")
+        (feature_dir / "issues" / "01.md").write_text("# local issue\n", encoding="utf-8")
+
+        tracker_feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
+        (tracker_feature_dir / "issues").mkdir(parents=True)
+        (tracker_feature_dir / "issues" / "stale.md").write_text("# stale\n", encoding="utf-8")
+        (tracker_feature_dir / "notes.txt").write_text("keep me\n", encoding="utf-8")
+        _git(self.tracker_workspace, "add", ".")
+        _git(self.tracker_workspace, "commit", "-m", "seed tracker feature")
+        _git(self.tracker_workspace, "push")
+
+        resolved_config = ResolvedConfig(
+            backend="git",
+            values={GIT_REPO_PATH_KEY: str(self.tracker_workspace)},
+            sources={GIT_REPO_PATH_KEY: "env"},
+            missing_keys=[],
+        )
+
+        from feishu_issue_tracker.git_backend import GitPersistenceBackend
+
+        result = PushService(
+            layout_provider=ScratchLayoutProvider(),
+            backend=GitPersistenceBackend(tracker_repo_path=self.tracker_workspace),
+        ).execute_push(
+            repo_root=self.source_repo,
+            cwd=feature_dir,
+            feature_name=None,
+            resolved_config=resolved_config,
+            confirm=True,
+        )
+
+        self.assertEqual(result.push_result["summary"]["deleted_remote"], 1)
+        self.assertFalse((tracker_feature_dir / "issues" / "stale.md").exists())
+        self.assertEqual((tracker_feature_dir / "notes.txt").read_text(encoding="utf-8"), "keep me\n")
+        sidecar = FeatureSidecar.load(sidecar_path(feature_dir, "git"))
+        self.assertEqual(sidecar.backend_name, "git")
+        self.assertEqual(sidecar.root_locator, str(self.tracker_workspace))
+
+    def test_pull_service_preview_reports_overwrite_direction_for_git_backend(self) -> None:
+        feature_dir = self.source_repo / ".scratch" / "feature-a"
+        (feature_dir / "issues").mkdir(parents=True)
+        (feature_dir / "spec.md").write_text("# local spec\n", encoding="utf-8")
+        (feature_dir / "map.md").write_text("# local map\n", encoding="utf-8")
+        (feature_dir / "issues" / "01.md").write_text("# local issue\n", encoding="utf-8")
+        (feature_dir / "draft.txt").write_text("local extra\n", encoding="utf-8")
+
+        tracker_feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
+        (tracker_feature_dir / "issues").mkdir(parents=True)
+        (tracker_feature_dir / "spec.md").write_text("# remote spec\n", encoding="utf-8")
+        (tracker_feature_dir / "issues" / "01.md").write_text("# remote issue\n", encoding="utf-8")
+        (tracker_feature_dir / "issues" / "02.md").write_text("# remote new issue\n", encoding="utf-8")
+        (tracker_feature_dir / "notes.txt").write_text("remote extra\n", encoding="utf-8")
+
+        resolved_config = ResolvedConfig(
+            backend="git",
+            values={GIT_REPO_PATH_KEY: str(self.tracker_workspace)},
+            sources={GIT_REPO_PATH_KEY: "env"},
+            missing_keys=[],
+        )
+
+        from feishu_issue_tracker.git_backend import GitPersistenceBackend
+
+        preview = PullService(
+            layout_provider=ScratchLayoutProvider(),
+            backend=GitPersistenceBackend(tracker_repo_path=self.tracker_workspace),
+        ).preview_pull(
+            repo_root=self.source_repo,
+            cwd=feature_dir,
+            feature_name=None,
+            resolved_config=resolved_config,
+        )
+
+        self.assertEqual(preview.will_create, ["issues/02.md"])
+        self.assertEqual(preview.will_overwrite, ["issues/01.md", "spec.md"])
+        self.assertEqual(preview.local_only_canonical, ["map.md"])
+        self.assertEqual(preview.remote_extra_files, ["notes.txt"])
+        self.assertEqual(preview.local_extra_files, ["draft.txt"])
+        self.assertIn("source of truth", preview.overwrite_hint)
+        self.assertTrue(preview.confirmation_required)
+
+    def test_execute_pull_restores_only_canonical_files_from_git_backend(self) -> None:
+        feature_dir = self.source_repo / ".scratch" / "feature-a"
+        (feature_dir / "issues").mkdir(parents=True)
+        (feature_dir / "spec.md").write_text("# local spec\n", encoding="utf-8")
+        (feature_dir / "map.md").write_text("# local map\n", encoding="utf-8")
+        (feature_dir / "issues" / "01.md").write_text("# local issue\n", encoding="utf-8")
+        (feature_dir / "draft.txt").write_text("local extra\n", encoding="utf-8")
+
+        local_tracker_feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
+        (local_tracker_feature_dir / "issues").mkdir(parents=True)
+        (local_tracker_feature_dir / "spec.md").write_text("# stale spec\n", encoding="utf-8")
+        (local_tracker_feature_dir / "issues" / "01.md").write_text("# stale issue\n", encoding="utf-8")
+        _git(self.tracker_workspace, "add", ".")
+        _git(self.tracker_workspace, "commit", "-m", "seed local tracker feature")
+        _git(self.tracker_workspace, "push")
+
+        collaborator = self.root / "pull-collaborator"
+        _git(self.root, "clone", str(self.remote_repo), str(collaborator))
+        tracker_feature_dir = collaborator / self.source_repo.name / "feature-a"
+        (tracker_feature_dir / "issues").mkdir(parents=True, exist_ok=True)
+        (tracker_feature_dir / "spec.md").write_text("# remote spec\n", encoding="utf-8")
+        (tracker_feature_dir / "issues" / "01.md").write_text("# remote issue\n", encoding="utf-8")
+        (tracker_feature_dir / "issues" / "02.md").write_text("# remote new issue\n", encoding="utf-8")
+        (tracker_feature_dir / "notes.txt").write_text("remote extra\n", encoding="utf-8")
+        _git(collaborator, "add", ".")
+        _git(collaborator, "commit", "-m", "publish remote pull state")
+        _git(collaborator, "push")
+
+        resolved_config = ResolvedConfig(
+            backend="git",
+            values={GIT_REPO_PATH_KEY: str(self.tracker_workspace)},
+            sources={GIT_REPO_PATH_KEY: "env"},
+            missing_keys=[],
+        )
+
+        from feishu_issue_tracker.git_backend import GitPersistenceBackend
+
+        result = PullService(
+            layout_provider=ScratchLayoutProvider(),
+            backend=GitPersistenceBackend(tracker_repo_path=self.tracker_workspace),
+        ).execute_pull(
+            repo_root=self.source_repo,
+            cwd=feature_dir,
+            feature_name=None,
+            resolved_config=resolved_config,
+            confirm=True,
+        )
+
+        self.assertIn("source of truth", result.preview.overwrite_hint)
+        self.assertEqual((feature_dir / "spec.md").read_text(encoding="utf-8"), "# remote spec\n")
+        self.assertEqual(
+            (feature_dir / "issues" / "02.md").read_text(encoding="utf-8"),
+            "# remote new issue\n",
+        )
+        self.assertFalse((feature_dir / "map.md").exists())
+        self.assertFalse((feature_dir / "notes.txt").exists())
 
 
 class GitCliDispatchTests(unittest.TestCase):
