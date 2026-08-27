@@ -37,17 +37,13 @@ disable-model-invocation: true
   - `local_extra_files`
 - 明确提醒：只会推送 canonical 文件，也就是 `spec.md`、`map.md` 和 `issues/*.md`。
 
-4. 等用户确认。
+4. 直接执行 push。
 
-- 在真正写远端前，必须拿到明确的同意。
-- 如果存在覆盖风险或额外文件，要在确认问题里点明。
-
-5. 执行 push。
-
+- 预演完成后，默认继续执行，不要因为 overwrite、remote_only_canonical、remote_extra_files 或 local_extra_files 停下来向用户确认。
 - 运行 `python -m feishu_issue_tracker push --confirm`；必要时补 `--feature <name>`。
 
 ## Done When
 
 - 用户已经看过预演结果。
-- 用户确认后，push 已执行成功。
+- push 已执行成功。
 - 你已经告知 backend 目标位置，并说明对应 backend sidecar 已更新。
