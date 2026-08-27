@@ -11,8 +11,15 @@ from feishu_issue_tracker.config import GIT_REPO_PATH_KEY, ResolvedConfig
 class GitPersistenceBackend:
     backend_name = "git"
 
-    def __init__(self, *, tracker_repo_path: Path, git_bin: str = "git") -> None:
+    def __init__(
+        self,
+        *,
+        tracker_repo_path: Path,
+        branch: str | None = None,
+        git_bin: str = "git",
+    ) -> None:
         self.tracker_repo_path = Path(tracker_repo_path)
+        self.branch = branch.strip() if branch and branch.strip() else None
         self.git_bin = git_bin
 
     def ensure_ready(self) -> None:
@@ -27,23 +34,12 @@ class GitPersistenceBackend:
             status="missing_workspace",
             hint="Set AGENT_ISSUE_TRACKER_GIT_REPO_PATH to an existing local Git checkout.",
         )
-        try:
-            self._run_git(
-                "rev-parse",
-                "--abbrev-ref",
-                "--symbolic-full-name",
-                "@{u}",
-                status="missing_remote",
-                hint="The Git backend requires the tracker workspace branch to track a remote.",
-            )
-        except PersistenceBackendError as exc:
-            raise PersistenceBackendError(
-                "Git tracker workspace requires a configured remote tracking branch.",
-                status="missing_remote",
-                hint=exc.hint
-                or "The Git backend requires the tracker workspace branch to track a remote.",
-                recommended_command=exc.recommended_command,
-            ) from exc
+        self._ensure_selected_branch()
+        self._ensure_tracking_branch()
+
+    def prepare_pull_preview(self) -> None:
+        self.ensure_ready()
+        self._pull_rebase(strategy_option="ours")
 
     def root_locator_from_config(self, *, resolved_config: ResolvedConfig) -> str:
         return str(Path(resolved_config.values[GIT_REPO_PATH_KEY]))
@@ -142,10 +138,19 @@ class GitPersistenceBackend:
             }
         }
 
-    def pull(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> dict:
+    def pull(
+        self,
+        *,
+        repo_root: Path,
+        local_dir: Path,
+        remote_locator: str,
+        refresh: bool = True,
+    ) -> dict:
         del repo_root
-        self.ensure_ready()
-        self._pull_rebase(strategy_option="ours")
+        if refresh:
+            self.prepare_pull_preview()
+        else:
+            self.ensure_ready()
 
         remote_dir = Path(remote_locator)
         if not remote_dir.exists():
@@ -199,6 +204,95 @@ class GitPersistenceBackend:
     def _pull_rebase(self, *, strategy_option: str) -> None:
         self._run_git("pull", "--rebase", "-X", strategy_option)
 
+    def _ensure_selected_branch(self) -> None:
+        if self.branch is None:
+            return
+
+        current_branch = self._current_branch_name()
+        if current_branch == self.branch:
+            return
+
+        local_branch = self._run_git(
+            "show-ref",
+            "--verify",
+            f"refs/heads/{self.branch}",
+            check=False,
+        )
+        if local_branch.returncode == 0:
+            self._run_git("checkout", self.branch)
+            return
+
+        remote_branch = self._run_git(
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            self.branch,
+            check=False,
+        )
+        if remote_branch.returncode == 0:
+            self._run_git("fetch", "origin", self.branch)
+            self._run_git("checkout", "-b", self.branch, "--track", f"origin/{self.branch}")
+            return
+
+        raise PersistenceBackendError(
+            f"Configured Git branch {self.branch!r} does not exist on origin.",
+            status="missing_branch",
+            hint=(
+                "Set AGENT_ISSUE_TRACKER_GIT_BRANCH to an existing remote branch, "
+                "or unset it to use the tracker workspace's current branch."
+            ),
+            recommended_command=f"{self.git_bin} ls-remote --heads origin {self.branch}",
+        )
+
+    def _ensure_tracking_branch(self) -> None:
+        upstream = self._run_git(
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{u}",
+            check=False,
+        )
+        if upstream.returncode == 0:
+            return
+
+        branch_name = self._current_branch_name()
+        if branch_name != "HEAD":
+            remote_branch = self._run_git(
+                "ls-remote",
+                "--exit-code",
+                "--heads",
+                "origin",
+                branch_name,
+                check=False,
+            )
+            if remote_branch.returncode == 0:
+                self._run_git("fetch", "origin", branch_name)
+                self._run_git("branch", "--set-upstream-to", f"origin/{branch_name}", branch_name)
+                retry = self._run_git(
+                    "rev-parse",
+                    "--abbrev-ref",
+                    "--symbolic-full-name",
+                    "@{u}",
+                    check=False,
+                )
+                if retry.returncode == 0:
+                    return
+
+        raise PersistenceBackendError(
+            "Git tracker workspace requires a configured remote tracking branch.",
+            status="missing_remote",
+            hint=(
+                "The Git backend requires the selected tracker workspace branch "
+                "to track a remote branch."
+            ),
+            recommended_command=(
+                f"{self.git_bin} branch --set-upstream-to origin/{branch_name} {branch_name}"
+                if branch_name != "HEAD"
+                else None
+            ),
+        )
+
     def _replace_tree(self, *, destination: Path, source: Path) -> None:
         if destination.exists():
             for child in sorted(destination.iterdir(), reverse=True):
@@ -217,6 +311,10 @@ class GitPersistenceBackend:
 
     def _pathspec_for(self, path: Path) -> str:
         return path.relative_to(self.tracker_repo_path).as_posix()
+
+    def _current_branch_name(self) -> str:
+        result = self._run_git("branch", "--show-current")
+        return result.stdout.strip()
 
     def _run_git(
         self,

@@ -5,6 +5,7 @@ from pathlib import Path
 from feishu_issue_tracker.config import (
     BACKEND_KEY,
     FEISHU_ROOT_FOLDER_TOKEN_KEY,
+    GIT_BRANCH_KEY,
     GIT_REPO_PATH_KEY,
     REPO_NAME_KEY,
     REQUIRED_CONFIG_KEYS,
@@ -31,6 +32,7 @@ class ResolveConfigTests(unittest.TestCase):
         result = resolve_config(
             repo_root=self.repo_root,
             env={
+                BACKEND_KEY: "feishu",
                 FEISHU_ROOT_FOLDER_TOKEN_KEY: "env-root",
                 REPO_NAME_KEY: "env-name",
             },
@@ -42,6 +44,7 @@ class ResolveConfigTests(unittest.TestCase):
 
     def test_uses_repo_env_when_env_is_missing(self) -> None:
         (self.repo_root / ".env").write_text(
+            "AGENT_ISSUE_TRACKER_BACKEND=feishu\n"
             "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=repo-root\n",
             encoding="utf-8",
         )
@@ -61,10 +64,12 @@ class ResolveConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(result.missing_keys, REQUIRED_CONFIG_KEYS)
+        self.assertEqual(result.backend, "")
 
     def test_uses_user_level_config_when_env_and_repo_env_are_missing(self) -> None:
         user_config_path = self.repo_root / "user-config.env"
         user_config_path.write_text(
+            "AGENT_ISSUE_TRACKER_BACKEND=feishu\n"
             "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=user-root\n",
             encoding="utf-8",
         )
@@ -83,6 +88,7 @@ class ResolveConfigTests(unittest.TestCase):
         result = resolve_config(
             repo_root=self.repo_root,
             env={
+                BACKEND_KEY: "feishu",
                 "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN": "legacy-root",
                 "FEISHU_ISSUE_TRACKER_REPO_NAME": "legacy-repo",
             },
@@ -100,6 +106,27 @@ class ResolveConfigTests(unittest.TestCase):
         self.assertEqual(result.backend, "git")
         self.assertEqual(result.missing_keys, [GIT_REPO_PATH_KEY])
 
+    def test_requires_backend_even_when_other_values_exist(self) -> None:
+        result = resolve_config(
+            repo_root=self.repo_root,
+            env={FEISHU_ROOT_FOLDER_TOKEN_KEY: "repo-root"},
+        )
+
+        self.assertEqual(result.missing_keys, [BACKEND_KEY])
+
+    def test_reads_optional_git_branch_config(self) -> None:
+        result = resolve_config(
+            repo_root=self.repo_root,
+            env={
+                BACKEND_KEY: "git",
+                GIT_REPO_PATH_KEY: "D:/tracker",
+                GIT_BRANCH_KEY: "issue-sync",
+            },
+        )
+
+        self.assertEqual(result.backend, "git")
+        self.assertEqual(result.values[GIT_BRANCH_KEY], "issue-sync")
+
     def test_reads_legacy_user_config_path_for_back_compat(self) -> None:
         appdata_root = self.repo_root / "appdata"
         legacy_config_path = appdata_root / "feishu-issue-tracker" / "config.env"
@@ -111,7 +138,10 @@ class ResolveConfigTests(unittest.TestCase):
 
         result = resolve_config(
             repo_root=self.repo_root,
-            env={"APPDATA": str(appdata_root)},
+            env={
+                "APPDATA": str(appdata_root),
+                BACKEND_KEY: "feishu",
+            },
         )
 
         self.assertEqual(result.values[FEISHU_ROOT_FOLDER_TOKEN_KEY], "legacy-user-root")

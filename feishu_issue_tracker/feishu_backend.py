@@ -16,6 +16,9 @@ class FeishuPersistenceBackend:
     def ensure_ready(self) -> None:
         self.client.ensure_ready()
 
+    def prepare_pull_preview(self) -> None:
+        return None
+
     def root_locator_from_config(self, *, resolved_config: ResolvedConfig) -> str:
         return resolved_config.values[FEISHU_ROOT_FOLDER_TOKEN_KEY]
 
@@ -40,5 +43,13 @@ class FeishuPersistenceBackend:
     def push(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> dict:
         return self.client.push(repo_root=repo_root, local_dir=local_dir, folder_token=remote_locator)
 
-    def pull(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> dict:
+    def pull(
+        self,
+        *,
+        repo_root: Path,
+        local_dir: Path,
+        remote_locator: str,
+        refresh: bool = True,
+    ) -> dict:
+        del refresh
         return self.client.pull(repo_root=repo_root, local_dir=local_dir, folder_token=remote_locator)

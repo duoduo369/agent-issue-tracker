@@ -68,6 +68,7 @@ class PullService:
         local_canonical_files = self.layout_provider.collect_canonical_files(feature_dir)
         local_extra_files = self.layout_provider.collect_local_extra_files(feature_dir)
 
+        self.backend.prepare_pull_preview()
         binding = resolve_pull_binding(
             repo_root=repo_root,
             feature_name=feature,
@@ -158,6 +159,7 @@ class PullService:
                 repo_root=repo_root,
                 local_dir=staging_dir,
                 remote_locator=preview.tracker_feature_locator,
+                refresh=False,
             )
             for rel_path in preview.local_only_canonical:
                 destination = self.layout_provider.restore_destination(feature_dir, rel_path)
