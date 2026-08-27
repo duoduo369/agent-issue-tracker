@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from feishu_issue_tracker.cli import main, resolve_backend
-from feishu_issue_tracker.config import BACKEND_KEY, GIT_BRANCH_KEY, GIT_REPO_PATH_KEY, ResolvedConfig
+from feishu_issue_tracker.config import GIT_BRANCH_KEY, GIT_REPO_PATH_KEY, ResolvedConfig
 from feishu_issue_tracker.git_backend import GitPersistenceBackend
 from feishu_issue_tracker.push_service import PushPreview
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullExecutionResult, PullPreview
@@ -37,7 +37,7 @@ class CliTests(unittest.TestCase):
             payload = stdout.getvalue()
             self.assertIn(".env.example", payload)
             self.assertIn('"user_config_path"', payload)
-            self.assertIn(BACKEND_KEY, payload)
+            self.assertIn(GIT_REPO_PATH_KEY, payload)
 
     def test_push_preview_does_not_run_doctor_before_preview(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

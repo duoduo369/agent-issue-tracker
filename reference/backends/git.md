@@ -2,7 +2,7 @@
 
 当当前 backend 是 `git` 时，runtime 分支遵循这些补充规则：
 
-- `AGENT_ISSUE_TRACKER_BACKEND` 必须显式设为 `git`。
+- 默认 backend 就是 `git`；如果需要显式指定，也应把 `AGENT_ISSUE_TRACKER_BACKEND` 设为 `git`。
 - `AGENT_ISSUE_TRACKER_GIT_REPO_PATH` 必须指向一个已存在、已配置 remote 的 tracker workspace。
 - 如果设置了 `AGENT_ISSUE_TRACKER_GIT_BRANCH`，运行时应先切到该分支；如果没设置，就沿用 tracker workspace 当前分支。
 - `pull` 的 preview 必须先刷新 tracker workspace，再让用户确认；不要让用户对过期状态做确认。

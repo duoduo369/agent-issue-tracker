@@ -4,6 +4,7 @@ from pathlib import Path
 
 from feishu_issue_tracker.config import (
     BACKEND_KEY,
+    DEFAULT_BACKEND,
     FEISHU_ROOT_FOLDER_TOKEN_KEY,
     GIT_BRANCH_KEY,
     GIT_REPO_PATH_KEY,
@@ -64,7 +65,7 @@ class ResolveConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(result.missing_keys, REQUIRED_CONFIG_KEYS)
-        self.assertEqual(result.backend, "")
+        self.assertEqual(result.backend, DEFAULT_BACKEND)
 
     def test_uses_user_level_config_when_env_and_repo_env_are_missing(self) -> None:
         user_config_path = self.repo_root / "user-config.env"
@@ -106,13 +107,14 @@ class ResolveConfigTests(unittest.TestCase):
         self.assertEqual(result.backend, "git")
         self.assertEqual(result.missing_keys, [GIT_REPO_PATH_KEY])
 
-    def test_requires_backend_even_when_other_values_exist(self) -> None:
+    def test_defaults_to_git_backend_when_backend_is_missing(self) -> None:
         result = resolve_config(
             repo_root=self.repo_root,
-            env={FEISHU_ROOT_FOLDER_TOKEN_KEY: "repo-root"},
+            env={},
         )
 
-        self.assertEqual(result.missing_keys, [BACKEND_KEY])
+        self.assertEqual(result.backend, "git")
+        self.assertEqual(result.missing_keys, [GIT_REPO_PATH_KEY])
 
     def test_reads_optional_git_branch_config(self) -> None:
         result = resolve_config(

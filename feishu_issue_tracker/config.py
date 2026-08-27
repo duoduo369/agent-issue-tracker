@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 BACKEND_KEY = "AGENT_ISSUE_TRACKER_BACKEND"
+DEFAULT_BACKEND = "git"
 REPO_NAME_KEY = "AGENT_ISSUE_TRACKER_REPO_NAME"
 FEISHU_ROOT_FOLDER_TOKEN_KEY = "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN"
 GIT_REPO_PATH_KEY = "AGENT_ISSUE_TRACKER_GIT_REPO_PATH"
@@ -27,7 +28,7 @@ BACKEND_REQUIRED_CONFIG_KEYS = {
     "feishu": [FEISHU_ROOT_FOLDER_TOKEN_KEY],
     "git": [GIT_REPO_PATH_KEY],
 }
-REQUIRED_CONFIG_KEYS = [BACKEND_KEY]
+REQUIRED_CONFIG_KEYS = BACKEND_REQUIRED_CONFIG_KEYS[DEFAULT_BACKEND]
 OPTIONAL_CONFIG_KEYS = [REPO_NAME_KEY, GIT_BRANCH_KEY]
 ALL_CONFIG_KEYS = [
     *CANONICAL_CONFIG_KEYS,
@@ -78,15 +79,7 @@ def resolve_config(
         values[key] = value
         sources[key] = source
 
-    backend = values.get(BACKEND_KEY, "").strip().lower()
-    if not backend:
-        return ResolvedConfig(
-            backend="",
-            values=values,
-            sources=sources,
-            missing_keys=[BACKEND_KEY],
-            user_config_path=resolved_user_config_path,
-        )
+    backend = values.get(BACKEND_KEY, DEFAULT_BACKEND).strip().lower() or DEFAULT_BACKEND
     if backend not in BACKEND_REQUIRED_CONFIG_KEYS:
         raise ValueError(
             f"Unsupported {BACKEND_KEY} {backend!r}; expected one of "

@@ -9,16 +9,16 @@
 用 /pull-from-issue-tracker 拉回 multi-backend-issue-tracker
 ```
 
-用户不需要按 backend 记不同命令。当前生效 backend 由配置决定。
+用户不需要按 backend 记不同命令。当前生效 backend 由配置决定；如果没有显式配置，默认使用 git backend。
 
 ## 配置
 
 优先在仓库根目录放 `.env`，可以直接参考 `.env.example`：
 
 ```text
-AGENT_ISSUE_TRACKER_BACKEND=feishu
+AGENT_ISSUE_TRACKER_BACKEND=git
 AGENT_ISSUE_TRACKER_REPO_NAME=
-AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=
+AGENT_ISSUE_TRACKER_GIT_REPO_PATH=
 ```
 
 支持的配置来源优先级：
