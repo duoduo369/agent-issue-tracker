@@ -6,10 +6,11 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from feishu_issue_tracker.backend import PersistenceBackend
-from feishu_issue_tracker.config import ResolvedConfig, resolve_config
+from feishu_issue_tracker.backend import PersistenceBackend, PersistenceBackendError
+from feishu_issue_tracker.config import GIT_REPO_PATH_KEY, ResolvedConfig, resolve_config
 from feishu_issue_tracker.feishu_backend import FeishuPersistenceBackend
 from feishu_issue_tracker.feishu_cli import LarkCliError
+from feishu_issue_tracker.git_backend import GitPersistenceBackend
 from feishu_issue_tracker.layout import (
     FeatureResolutionError,
     RepoRootNotFoundError,
@@ -146,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 3
-    except LarkCliError as exc:
+    except (LarkCliError, PersistenceBackendError) as exc:
         print(
             json.dumps(
                 {
@@ -179,7 +180,7 @@ def resolve_backend(*, resolved_config: ResolvedConfig) -> PersistenceBackend:
     if resolved_config.backend == "feishu":
         return FeishuPersistenceBackend()
     if resolved_config.backend == "git":
-        raise ValueError("Backend 'git' is not implemented yet.")
+        return GitPersistenceBackend(tracker_repo_path=Path(resolved_config.values[GIT_REPO_PATH_KEY]))
     raise ValueError(f"Unsupported backend {resolved_config.backend!r}.")
 
 

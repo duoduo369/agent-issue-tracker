@@ -7,7 +7,9 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from feishu_issue_tracker.cli import main
+from feishu_issue_tracker.cli import main, resolve_backend
+from feishu_issue_tracker.config import GIT_REPO_PATH_KEY, ResolvedConfig
+from feishu_issue_tracker.git_backend import GitPersistenceBackend
 from feishu_issue_tracker.push_service import PushPreview
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullExecutionResult, PullPreview
 
@@ -217,25 +219,14 @@ class CliTests(unittest.TestCase):
             self.assertIn('"error": "confirmation_required"', payload)
             self.assertIn('"preview"', payload)
 
-    def test_reports_not_implemented_backend_cleanly(self) -> None:
-        with tempfile.TemporaryDirectory() as tempdir:
-            repo_root = Path(tempdir)
-            (repo_root / ".git").mkdir()
-            (repo_root / ".env").write_text(
-                "AGENT_ISSUE_TRACKER_BACKEND=git\n"
-                "AGENT_ISSUE_TRACKER_GIT_REPO_PATH=D:/tracker\n",
-                encoding="utf-8",
-            )
-            stdout = StringIO()
-            original_cwd = Path.cwd()
-            try:
-                os.chdir(repo_root)
-                with redirect_stdout(stdout):
-                    exit_code = main(["push", "--feature", "feature-a"])
-            finally:
-                os.chdir(original_cwd)
+    def test_resolves_git_backend_cleanly(self) -> None:
+        resolved = ResolvedConfig(
+            backend="git",
+            values={GIT_REPO_PATH_KEY: "D:/tracker"},
+            sources={GIT_REPO_PATH_KEY: "env"},
+            missing_keys=[],
+        )
 
-            self.assertEqual(exit_code, 1)
-            payload = stdout.getvalue()
-            self.assertIn('"backend": "git"', payload)
-            self.assertIn("not implemented", payload.lower())
+        backend = resolve_backend(resolved_config=resolved)
+
+        self.assertIsInstance(backend, GitPersistenceBackend)
