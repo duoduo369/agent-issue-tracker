@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 先阅读：
 
-- `Reference/pull.md`
-- `Reference/backends/feishu.md`（当当前 backend 是 `feishu` 时）
-- `Reference/backends/git.md`（当当前 backend 是 `git` 时）
+- `reference/pull.md`
+- `reference/backends/feishu.md`（当当前 backend 是 `feishu` 时）
+- `reference/backends/git.md`（当当前 backend 是 `git` 时）
 
 ## Steps
 
