@@ -14,14 +14,14 @@ disable-model-invocation: true
 - 如果用户没有指定，就依赖当前目录自动识别。
 - 如果工具返回无法识别 feature，再向用户确认 feature 名。
 
-2. 先做体检，确认本地依赖状态。
+2. 先做预演，让工具在真实上下文里暴露缺失配置或依赖问题。
 
-- 在目标仓库中运行 `python -m feishu_issue_tracker doctor`。
+- 在目标仓库中运行 `python -m feishu_issue_tracker push`；必要时补 `--feature <name>`。
 - 如果 `config.missing_keys` 非空，向用户索取：
   - `FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN`：必填
   - `FEISHU_ISSUE_TRACKER_REPO_NAME`：可选
-- 让用户把这些值写进环境变量或仓库根目录 `.env`；优先推荐直接参考 `.env.example` 在仓库根目录创建 `.env`。
-- 如果返回 `lark_cli.status != "ready"`，优先按照 `recommended_command` 引导用户完成初始化或登录，再重新执行体检。
+- 让用户把这些值写进环境变量、仓库根目录 `.env` 或工具返回的 user-level config 文件；优先推荐直接参考 `.env.example` 在仓库根目录创建 `.env`。
+- 如果工具返回 `recommended_command`，优先按照它引导用户完成初始化或登录，再重新执行预演。
 - 优先按 `bot-first` 理解结果：如果 bot 能访问目标文件夹，不要额外要求用户授权。
 - 只有当工具明确返回 `user_identity_missing` 或 `missing_scope` 时，才进入 `user-fallback`。
 - 一旦进入 `user-fallback`，优先引导用户一次性完成完整 user scope 集合，而不是边跑边补：
@@ -32,11 +32,7 @@ disable-model-invocation: true
   - `drive:file:download`
 - 如果开发者后台刚新增了这些用户权限，先让用户发布一个新版本，再做这一轮合并授权。
 
-3. 先做预演，不要直接写远端。
-
-- 在目标仓库中运行 `python -m feishu_issue_tracker push`；必要时补 `--feature <name>`。
-
-4. 清楚地总结预演结果。
+3. 清楚地总结预演结果。
 
 - 说明解析出的 repo 名和 feature 名。
 - 只在非空时汇报这些桶：
@@ -47,12 +43,12 @@ disable-model-invocation: true
   - `local_extra_files`
 - 明确提醒：只会推送 canonical 文件，也就是 `spec.md`、`map.md` 和 `issues/*.md`。
 
-5. 等用户确认。
+4. 等用户确认。
 
 - 在真正写远端前，必须拿到明确的同意。
 - 如果存在覆盖风险或额外文件，要在确认问题里点明。
 
-6. 执行 push。
+5. 执行 push。
 
 - 运行 `python -m feishu_issue_tracker push --confirm`；必要时补 `--feature <name>`。
 - 如果工具提示 `lark-cli` 未安装、未配置或未登录，停止执行并把问题告诉用户，不要绕过这条路径去直接写飞书。

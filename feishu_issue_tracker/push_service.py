@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from feishu_issue_tracker.config import ResolvedConfig
-from feishu_issue_tracker.layout import CanonicalFile, ScratchLayoutProvider
+from feishu_issue_tracker.layout import ScratchLayoutProvider
 from feishu_issue_tracker.sidecar import FeatureSidecar
+from feishu_issue_tracker.sync_common import canonical_staging_dir, resolve_push_binding
 
 
 @dataclass(frozen=True)
@@ -62,42 +62,24 @@ class PushService:
         if not canonical_files:
             raise ValueError(f"No canonical files found under {feature_dir}")
 
-        sidecar_path = feature_dir / self.layout_provider.sidecar_name
-        sidecar = FeatureSidecar.load(sidecar_path)
-        remote_root_token = (
-            sidecar.remote_root_folder_token
-            if sidecar
-            else resolved_config.values["FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN"]
+        binding = resolve_push_binding(
+            repo_root=repo_root,
+            feature_name=feature,
+            feature_dir=feature_dir,
+            resolved_config=resolved_config,
+            layout_provider=self.layout_provider,
+            feishu_client=self.feishu_client,
         )
-        resolved_repo_name = (
-            sidecar.resolved_repo_name
-            if sidecar
-            else resolved_config.values.get("FEISHU_ISSUE_TRACKER_REPO_NAME", repo_root.name)
-        )
-
-        remote_repo_folder_token = sidecar.remote_repo_folder_token if sidecar else None
-        remote_feature_folder_token = sidecar.remote_feature_folder_token if sidecar else None
-
-        if remote_repo_folder_token is None:
-            remote_repo_folder_token = self.feishu_client.find_child_folder(
-                remote_root_token,
-                resolved_repo_name,
-            )
-        if remote_feature_folder_token is None and remote_repo_folder_token is not None:
-            remote_feature_folder_token = self.feishu_client.find_child_folder(
-                remote_repo_folder_token,
-                feature,
-            )
 
         canonical_rel_paths = [item.rel_path for item in canonical_files]
         local_extra_files = self.layout_provider.collect_local_extra_files(feature_dir)
 
-        if remote_feature_folder_token is None:
+        if binding.remote_feature_folder_token is None:
             return PushPreview(
                 feature_name=feature,
-                resolved_repo_name=resolved_repo_name,
-                remote_root_folder_token=remote_root_token,
-                remote_repo_folder_token=remote_repo_folder_token,
+                resolved_repo_name=binding.resolved_repo_name,
+                remote_root_folder_token=binding.remote_root_folder_token,
+                remote_repo_folder_token=binding.remote_repo_folder_token,
                 remote_feature_folder_token=None,
                 canonical_files=canonical_rel_paths,
                 will_create=canonical_rel_paths,
@@ -109,18 +91,18 @@ class PushService:
                 confirmation_required=bool(local_extra_files),
             )
 
-        with self._canonical_staging_dir(repo_root, canonical_files) as staging_dir:
+        with canonical_staging_dir(repo_root, canonical_files) as staging_dir:
             status_result = self.feishu_client.status(
                 repo_root=repo_root,
                 local_dir=staging_dir,
-                folder_token=remote_feature_folder_token,
+                folder_token=binding.remote_feature_folder_token,
             )
 
         remote_only_canonical = [
-            path for path in status_result.new_remote if self.layout_provider.is_canonical_rel_path(path)
+            path for path in status_result.remote_only if self.layout_provider.is_canonical_rel_path(path)
         ]
         remote_extra_files = [
-            path for path in status_result.new_remote if not self.layout_provider.is_canonical_rel_path(path)
+            path for path in status_result.remote_only if not self.layout_provider.is_canonical_rel_path(path)
         ]
         confirmation_required = bool(
             status_result.modified
@@ -130,12 +112,12 @@ class PushService:
         )
         return PushPreview(
             feature_name=feature,
-            resolved_repo_name=resolved_repo_name,
-            remote_root_folder_token=remote_root_token,
-            remote_repo_folder_token=remote_repo_folder_token,
-            remote_feature_folder_token=remote_feature_folder_token,
+            resolved_repo_name=binding.resolved_repo_name,
+            remote_root_folder_token=binding.remote_root_folder_token,
+            remote_repo_folder_token=binding.remote_repo_folder_token,
+            remote_feature_folder_token=binding.remote_feature_folder_token,
             canonical_files=canonical_rel_paths,
-            will_create=status_result.new_local,
+            will_create=status_result.local_only,
             will_overwrite=status_result.modified,
             unchanged=status_result.unchanged,
             remote_only_canonical=remote_only_canonical,
@@ -153,6 +135,8 @@ class PushService:
         resolved_config: ResolvedConfig,
         confirm: bool,
     ) -> PushExecutionResult:
+        if confirm:
+            self.feishu_client.ensure_ready()
         preview = self.preview_push(
             repo_root=repo_root,
             cwd=cwd,
@@ -162,7 +146,6 @@ class PushService:
         if not confirm:
             raise PushConfirmationRequired(preview)
 
-        self.feishu_client.ensure_ready()
         remote_repo_folder_token = preview.remote_repo_folder_token
         if remote_repo_folder_token is None:
             remote_repo_folder_token = self.feishu_client.create_folder(
@@ -178,7 +161,7 @@ class PushService:
 
         feature_dir = self.layout_provider.feature_dir(repo_root, preview.feature_name)
         canonical_files = self.layout_provider.collect_canonical_files(feature_dir)
-        with self._canonical_staging_dir(repo_root, canonical_files) as staging_dir:
+        with canonical_staging_dir(repo_root, canonical_files) as staging_dir:
             push_result = self.feishu_client.push(
                 repo_root=repo_root,
                 local_dir=staging_dir,
@@ -209,32 +192,3 @@ class PushService:
             confirmation_required=preview.confirmation_required,
         )
         return PushExecutionResult(preview=final_preview, push_result=push_result)
-
-    def _canonical_staging_dir(
-        self,
-        repo_root: Path,
-        canonical_files: list[CanonicalFile],
-    ):
-        return _CanonicalStagingDir(repo_root, canonical_files)
-
-
-class _CanonicalStagingDir:
-    def __init__(self, repo_root: Path, canonical_files: list[CanonicalFile]) -> None:
-        self.repo_root = repo_root
-        self.canonical_files = canonical_files
-        self.path: Path | None = None
-
-    def __enter__(self) -> Path:
-        staging_root = Path(
-            tempfile.mkdtemp(prefix=".feishu-sync-staging-", dir=self.repo_root)
-        )
-        for item in self.canonical_files:
-            destination = staging_root / item.rel_path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item.absolute_path, destination)
-        self.path = staging_root
-        return staging_root
-
-    def __exit__(self, exc_type, exc, exc_tb) -> None:
-        if self.path and self.path.exists():
-            shutil.rmtree(self.path)

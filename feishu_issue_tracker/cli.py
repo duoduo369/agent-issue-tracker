@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from feishu_issue_tracker.config import resolve_config
-from feishu_issue_tracker.feishu_cli import LarkCliDoctorResult, LarkCliError, LarkCliFeishuClient
+from feishu_issue_tracker.feishu_cli import LarkCliError, LarkCliFeishuClient
 from feishu_issue_tracker.layout import FeatureResolutionError, RepoRootNotFoundError, ScratchLayoutProvider, find_repo_root
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullService
 from feishu_issue_tracker.push_service import PushConfirmationRequired, PushService
@@ -21,27 +21,6 @@ def main(argv: list[str] | None = None) -> int:
         repo_root = find_repo_root(Path.cwd())
         resolved_config = resolve_config(repo_root=repo_root)
         client = LarkCliFeishuClient()
-        lark_cli = client.doctor()
-
-        if args.command == "doctor":
-            payload = {
-                "ok": not resolved_config.missing_keys and lark_cli.ready,
-                "mode": "doctor",
-                "repo_root": str(repo_root),
-                "access_strategy": {
-                    "preferred": client.preferred_access_strategy(),
-                    "fallback": "user_fallback",
-                    "user_fallback_scopes": client.user_fallback_scopes(),
-                },
-                "config": {
-                    "values": resolved_config.values,
-                    "sources": resolved_config.sources,
-                    "missing_keys": resolved_config.missing_keys,
-                },
-                "lark_cli": asdict(lark_cli),
-            }
-            print(json.dumps(payload, indent=2))
-            return 0 if payload["ok"] else 1
 
         if resolved_config.missing_keys:
             print(
@@ -50,16 +29,16 @@ def main(argv: list[str] | None = None) -> int:
                         "ok": False,
                         "error": "missing_config",
                         "missing_keys": resolved_config.missing_keys,
-                        "hint": "Set the missing keys via environment variables or add them to the repo-root .env file. See .env.example.",
+                        "user_config_path": str(resolved_config.user_config_path),
+                        "hint": (
+                            "Set the missing keys via environment variables, the repo-root .env file, "
+                            "or the user-level config file. See .env.example."
+                        ),
                     },
                     indent=2,
                 )
             )
             return 2
-
-        if not lark_cli.ready:
-            print(json.dumps(_lark_cli_error_payload(lark_cli), indent=2))
-            return 4
 
         if args.command == "push":
             service = PushService(layout_provider=ScratchLayoutProvider(), feishu_client=client)
@@ -165,7 +144,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m feishu_issue_tracker")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("doctor")
     push_parser = subparsers.add_parser("push")
     push_parser.add_argument("--feature")
     push_parser.add_argument("--confirm", action="store_true")
@@ -173,15 +151,6 @@ def build_parser() -> argparse.ArgumentParser:
     pull_parser.add_argument("--feature")
     pull_parser.add_argument("--confirm", action="store_true")
     return parser
-
-
-def _lark_cli_error_payload(result: LarkCliDoctorResult) -> dict:
-    return {
-        "ok": False,
-        "error": result.status,
-        "hint": result.hint,
-        "recommended_command": result.recommended_command,
-    }
 
 
 if __name__ == "__main__":

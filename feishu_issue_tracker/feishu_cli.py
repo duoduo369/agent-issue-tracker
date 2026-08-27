@@ -44,11 +44,11 @@ class RemoteFolderConflictError(LarkCliError):
 
 
 @dataclass(frozen=True)
-class StatusResult:
-    new_local: list[str]
+class DriveDiffStatus:
+    local_only: list[str]
     modified: list[str]
     unchanged: list[str]
-    new_remote: list[str]
+    remote_only: list[str]
 
 
 @dataclass(frozen=True)
@@ -166,7 +166,7 @@ class LarkCliFeishuClient:
         )
         return self._unwrap_data(payload)["token"]
 
-    def status(self, *, repo_root: Path, local_dir: Path, folder_token: str) -> StatusResult:
+    def status(self, *, repo_root: Path, local_dir: Path, folder_token: str) -> DriveDiffStatus:
         payload = self._run_drive_json(
             [
                 "drive",
@@ -180,11 +180,11 @@ class LarkCliFeishuClient:
             cwd=repo_root,
         )
         data = self._unwrap_data(payload)
-        return StatusResult(
-            new_local=sorted(item["rel_path"] for item in data.get("new_local", [])),
+        return DriveDiffStatus(
+            local_only=sorted(item["rel_path"] for item in data.get("new_local", [])),
             modified=sorted(item["rel_path"] for item in data.get("modified", [])),
             unchanged=sorted(item["rel_path"] for item in data.get("unchanged", [])),
-            new_remote=sorted(item["rel_path"] for item in data.get("new_remote", [])),
+            remote_only=sorted(item["rel_path"] for item in data.get("new_remote", [])),
         )
 
     def push(self, *, repo_root: Path, local_dir: Path, folder_token: str) -> dict:
@@ -424,6 +424,7 @@ class LarkCliFeishuClient:
         returncode: int,
     ) -> _JsonCommandResult:
         scope_list = self._ordered_unique_scopes(missing_scopes)
+        recommended_scopes = self._recommended_user_fallback_scopes(scope_list)
         return _JsonCommandResult(
             returncode=returncode,
             payload={
@@ -437,7 +438,7 @@ class LarkCliFeishuClient:
                         "If you need user-fallback, authorize the full one-time fallback scope set in a single login."
                     ),
                     "missing_scopes": scope_list,
-                    "recommended_command": self._user_fallback_login_command(scope_list),
+                    "recommended_command": self._user_fallback_login_command(recommended_scopes),
                 }
             },
         )
@@ -448,3 +449,6 @@ class LarkCliFeishuClient:
         ordered = [scope for scope in USER_FALLBACK_SCOPES if scope in requested_set]
         extras = [scope for scope in requested if scope not in USER_FALLBACK_SCOPES]
         return ordered + list(dict.fromkeys(extras))
+
+    def _recommended_user_fallback_scopes(self, missing_scopes: list[str]) -> list[str]:
+        return self._ordered_unique_scopes([*USER_FALLBACK_SCOPES, *missing_scopes])

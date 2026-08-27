@@ -216,7 +216,7 @@ class LarkCliFeishuClientTests(unittest.TestCase):
         )
         self.assertEqual(
             result.payload["error"]["recommended_command"],
-            'lark-cli auth login --scope "space:folder:create drive:drive.metadata:readonly drive:file:upload drive:file:download" --no-wait --json',
+            'lark-cli auth login --scope "space:document:retrieve space:folder:create drive:drive.metadata:readonly drive:file:upload drive:file:download" --no-wait --json',
         )
         self.assertEqual(run_mock.call_count, 2)
 
@@ -322,7 +322,7 @@ class LarkCliFeishuClientTests(unittest.TestCase):
         self.assertEqual(result.payload["error"]["missing_scopes"], ["space:folder:create"])
         self.assertEqual(
             result.payload["error"]["recommended_command"],
-            'lark-cli auth login --scope "space:folder:create" --no-wait --json',
+            'lark-cli auth login --scope "space:document:retrieve space:folder:create drive:drive.metadata:readonly drive:file:upload drive:file:download" --no-wait --json',
         )
 
     def test_pull_uses_overwrite_policy(self) -> None:

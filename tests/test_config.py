@@ -57,3 +57,20 @@ class ResolveConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(result.missing_keys, REQUIRED_CONFIG_KEYS)
+
+    def test_uses_user_level_config_when_env_and_repo_env_are_missing(self) -> None:
+        user_config_path = self.repo_root / "user-config.env"
+        user_config_path.write_text(
+            "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN=user-root\n",
+            encoding="utf-8",
+        )
+
+        result = resolve_config(
+            repo_root=self.repo_root,
+            env={},
+            user_config_path=user_config_path,
+        )
+
+        self.assertEqual(result.values["FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN"], "user-root")
+        self.assertEqual(result.sources["FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN"], "user_env")
+        self.assertEqual(result.user_config_path, user_config_path)

@@ -14,15 +14,14 @@ disable-model-invocation: true
 - 如果用户没有指定，就依赖当前目录自动识别。
 - 如果工具返回无法识别 feature，再向用户确认 feature 名。
 
-2. 先做体检，确认本地依赖状态。
+2. 先做预演，让工具在真实上下文里暴露缺失配置或依赖问题。
 
-- 在目标仓库中运行 `python -m feishu_issue_tracker doctor`。
-- `doctor` 是仓库级体检，不接收 `--feature`；不要把用户给的 feature 透传给这一步。
+- 在目标仓库中运行 `python -m feishu_issue_tracker pull`；必要时补 `--feature <name>`。
 - 如果 `config.missing_keys` 非空，向用户索取：
   - `FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN`：必填
   - `FEISHU_ISSUE_TRACKER_REPO_NAME`：可选
-- 让用户把这些值写进环境变量或仓库根目录 `.env`；优先推荐直接参考 `.env.example` 在仓库根目录创建 `.env`。
-- 如果返回 `lark_cli.status != "ready"`，优先按照 `recommended_command` 引导用户完成初始化或登录，再重新执行体检。
+- 让用户把这些值写进环境变量、仓库根目录 `.env` 或工具返回的 user-level config 文件；优先推荐直接参考 `.env.example` 在仓库根目录创建 `.env`。
+- 如果工具返回 `recommended_command`，优先按照它引导用户完成初始化或登录，再重新执行预演。
 - 优先按 `bot-first` 理解结果：如果 bot 能访问目标文件夹，不要额外要求用户授权。
 - 只有当工具明确返回 `user_identity_missing` 或 `missing_scope` 时，才进入 `user-fallback`。
 - 一旦进入 `user-fallback`，优先引导用户一次性完成完整 user scope 集合，而不是边跑边补：
@@ -33,10 +32,7 @@ disable-model-invocation: true
   - `drive:file:download`
 - 如果开发者后台刚新增了这些用户权限，先让用户发布一个新版本，再做这一轮合并授权。
 
-3. 先做预演，不要直接写本地。
-
-- 在目标仓库中运行 `python -m feishu_issue_tracker pull`；必要时补 `--feature <name>`。
-- `pull` 才是 feature 级命令：如果用户显式给了 feature，就传给 `--feature`；否则只在当前目录已经位于 `.scratch/<feature>` 内时依赖自动识别。
+3. `pull` 才是 feature 级命令：如果用户显式给了 feature，就传给 `--feature`；否则只在当前目录已经位于 `.scratch/<feature>` 内时依赖自动识别。
 
 4. 清楚地总结预演结果。
 

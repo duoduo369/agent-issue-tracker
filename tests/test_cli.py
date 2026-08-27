@@ -9,14 +9,19 @@ from unittest.mock import patch
 
 from feishu_issue_tracker.cli import main
 from feishu_issue_tracker.feishu_cli import LarkCliDoctorResult
+from feishu_issue_tracker.push_service import PushPreview
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullExecutionResult, PullPreview
 
 
 @dataclass
 class _FakeFeishuClient:
-    doctor_result: LarkCliDoctorResult
+    doctor_result: LarkCliDoctorResult | None = None
+    doctor_calls: int = 0
 
     def doctor(self) -> LarkCliDoctorResult:
+        self.doctor_calls += 1
+        if self.doctor_result is None:
+            raise AssertionError("doctor() should not have been called")
         return self.doctor_result
 
     def preferred_access_strategy(self) -> str:
@@ -47,45 +52,11 @@ class CliTests(unittest.TestCase):
                 os.chdir(original_cwd)
 
             self.assertEqual(exit_code, 2)
-            self.assertIn(".env.example", stdout.getvalue())
-
-    def test_doctor_reports_config_and_lark_cli_state(self) -> None:
-        with tempfile.TemporaryDirectory() as tempdir:
-            repo_root = Path(tempdir)
-            (repo_root / ".git").mkdir()
-            stdout = StringIO()
-            original_cwd = Path.cwd()
-            try:
-                os.chdir(repo_root)
-                with (
-                    patch(
-                        "feishu_issue_tracker.cli.LarkCliFeishuClient",
-                        return_value=_FakeFeishuClient(
-                            LarkCliDoctorResult(
-                                installed=True,
-                                executable="lark-cli.cmd",
-                                ready=False,
-                                status="not_configured",
-                                hint="run `lark-cli config init --new`",
-                                recommended_command="lark-cli config init --new",
-                            )
-                        ),
-                    ),
-                    redirect_stdout(stdout),
-                ):
-                    exit_code = main(["doctor"])
-            finally:
-                os.chdir(original_cwd)
-
-            self.assertEqual(exit_code, 1)
             payload = stdout.getvalue()
-            self.assertIn('"mode": "doctor"', payload)
-            self.assertIn('"preferred": "bot_first"', payload)
-            self.assertIn('"fallback": "user_fallback"', payload)
-            self.assertIn('"missing_keys"', payload)
-            self.assertIn('"status": "not_configured"', payload)
+            self.assertIn(".env.example", payload)
+            self.assertIn('"user_config_path"', payload)
 
-    def test_push_returns_structured_lark_cli_error(self) -> None:
+    def test_push_preview_does_not_run_doctor_before_preview(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
@@ -95,32 +66,41 @@ class CliTests(unittest.TestCase):
             )
             stdout = StringIO()
             original_cwd = Path.cwd()
+            client = _FakeFeishuClient()
+            preview = PushPreview(
+                feature_name="feature-a",
+                resolved_repo_name="remote-repo",
+                remote_root_folder_token="root-folder",
+                remote_repo_folder_token="root-folder/remote-repo",
+                remote_feature_folder_token="root-folder/remote-repo/feature-a",
+                canonical_files=["spec.md"],
+                will_create=["spec.md"],
+                will_overwrite=[],
+                unchanged=[],
+                remote_only_canonical=[],
+                remote_extra_files=[],
+                local_extra_files=[],
+                confirmation_required=False,
+            )
             try:
                 os.chdir(repo_root)
                 with (
                     patch(
                         "feishu_issue_tracker.cli.LarkCliFeishuClient",
-                        return_value=_FakeFeishuClient(
-                            LarkCliDoctorResult(
-                                installed=True,
-                                executable="lark-cli.cmd",
-                                ready=False,
-                                status="not_configured",
-                                hint="run `lark-cli config init --new`",
-                                recommended_command="lark-cli config init --new",
-                            )
-                        ),
+                        return_value=client,
                     ),
+                    patch("feishu_issue_tracker.cli.PushService") as push_service_cls,
                     redirect_stdout(stdout),
                 ):
+                    push_service_cls.return_value.preview_push.return_value = preview
                     exit_code = main(["push", "--feature", "feature-a"])
             finally:
                 os.chdir(original_cwd)
 
-            self.assertEqual(exit_code, 4)
+            self.assertEqual(exit_code, 0)
             payload = stdout.getvalue()
-            self.assertIn('"error": "not_configured"', payload)
-            self.assertIn('"recommended_command": "lark-cli config init --new"', payload)
+            self.assertIn('"mode": "preview"', payload)
+            self.assertEqual(client.doctor_calls, 0)
 
     def test_pull_returns_structured_execution_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

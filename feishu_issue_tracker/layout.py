@@ -29,7 +29,7 @@ class ScratchLayoutProvider:
         explicit_feature: str | None,
     ) -> str:
         if explicit_feature and explicit_feature.strip():
-            return explicit_feature.strip()
+            return self.normalize_feature_name(explicit_feature)
         try:
             relative_cwd = cwd.resolve().relative_to(repo_root.resolve())
         except ValueError as exc:
@@ -38,13 +38,31 @@ class ScratchLayoutProvider:
             ) from exc
         parts = relative_cwd.parts
         if len(parts) >= 2 and parts[0] == ".scratch":
-            return parts[1]
+            return self.normalize_feature_name(parts[1])
         raise FeatureResolutionError(
             "Feature could not be inferred from the current directory; pass --feature."
         )
 
     def feature_dir(self, repo_root: Path, feature_name: str) -> Path:
-        return repo_root / ".scratch" / feature_name
+        return repo_root / ".scratch" / self.normalize_feature_name(feature_name)
+
+    def normalize_feature_name(self, feature_name: str) -> str:
+        normalized = feature_name.strip()
+        if not normalized:
+            raise FeatureResolutionError("Feature name cannot be empty.")
+        if normalized in {".", ".."}:
+            raise FeatureResolutionError(
+                "Feature names must stay within a single .scratch/<feature> directory."
+            )
+        if normalized.startswith(("/", "\\")) or "/" in normalized or "\\" in normalized:
+            raise FeatureResolutionError(
+                "Feature names must stay within a single .scratch/<feature> directory."
+            )
+        if len(normalized) >= 2 and normalized[1] == ":" and normalized[0].isalpha():
+            raise FeatureResolutionError(
+                "Feature names must stay within a single .scratch/<feature> directory."
+            )
+        return normalized
 
     def collect_canonical_files(self, feature_dir: Path) -> list[CanonicalFile]:
         files: list[CanonicalFile] = []

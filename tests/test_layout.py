@@ -41,6 +41,14 @@ class ScratchLayoutProviderTests(unittest.TestCase):
                 explicit_feature=None,
             )
 
+    def test_rejects_explicit_feature_that_escapes_scratch_directory(self) -> None:
+        with self.assertRaises(FeatureResolutionError):
+            self.provider.resolve_feature_name(
+                repo_root=self.repo_root,
+                cwd=self.repo_root,
+                explicit_feature="../outside",
+            )
+
     def test_discovers_only_canonical_files(self) -> None:
         canonical_files = self.provider.collect_canonical_files(self.feature_dir)
 

@@ -11,10 +11,10 @@ from feishu_issue_tracker.sidecar import FeatureSidecar
 
 @dataclass
 class FakeStatusResult:
-    new_local: list[str]
+    local_only: list[str]
     modified: list[str]
     unchanged: list[str]
-    new_remote: list[str]
+    remote_only: list[str]
 
 
 class FakeFeishuClient:
@@ -24,10 +24,10 @@ class FakeFeishuClient:
         self.pull_calls: list[tuple[str, str]] = []
         self.child_folders: dict[tuple[str, str], str] = {}
         self.status_result = FakeStatusResult(
-            new_local=["map.md"],
+            local_only=["map.md"],
             modified=["issues/01.md"],
             unchanged=["spec.md"],
-            new_remote=["issues/02.md", "notes.txt"],
+            remote_only=["issues/02.md", "notes.txt"],
         )
         self.remote_files = {
             "spec.md": "# remote spec\n",
@@ -188,3 +188,22 @@ class PullServiceTests(unittest.TestCase):
 
         self.assertEqual(preview.resolved_repo_name, "stable-repo")
         self.assertEqual(self.client.status_calls[0][1], "stable-root/stable-repo/feature-a")
+
+    def test_ignores_sidecar_mapping_when_feature_name_does_not_match(self) -> None:
+        FeatureSidecar(
+            feature_name="feature-b",
+            resolved_repo_name="stable-repo",
+            remote_root_folder_token="stable-root",
+            remote_repo_folder_token="stable-root/stable-repo",
+            remote_feature_folder_token="stable-root/stable-repo/feature-b",
+        ).save(self.sidecar_path)
+
+        preview = self.service.preview_pull(
+            repo_root=self.repo_root,
+            cwd=self.feature_dir,
+            feature_name=None,
+            resolved_config=self.config,
+        )
+
+        self.assertEqual(preview.resolved_repo_name, "remote-repo")
+        self.assertEqual(self.client.status_calls[0][1], "root-folder/remote-repo/feature-a")
