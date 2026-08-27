@@ -8,33 +8,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from feishu_issue_tracker.cli import main
-from feishu_issue_tracker.feishu_cli import LarkCliDoctorResult
 from feishu_issue_tracker.push_service import PushPreview
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullExecutionResult, PullPreview
 
 
 @dataclass
-class _FakeFeishuClient:
-    doctor_result: LarkCliDoctorResult | None = None
-    doctor_calls: int = 0
-
-    def doctor(self) -> LarkCliDoctorResult:
-        self.doctor_calls += 1
-        if self.doctor_result is None:
-            raise AssertionError("doctor() should not have been called")
-        return self.doctor_result
-
-    def preferred_access_strategy(self) -> str:
-        return "bot_first"
-
-    def user_fallback_scopes(self) -> list[str]:
-        return [
-            "space:document:retrieve",
-            "space:folder:create",
-            "drive:drive.metadata:readonly",
-            "drive:file:upload",
-            "drive:file:download",
-        ]
+class _FakeBackend:
+    backend_name: str = "feishu"
 
 
 class CliTests(unittest.TestCase):
@@ -55,24 +35,25 @@ class CliTests(unittest.TestCase):
             payload = stdout.getvalue()
             self.assertIn(".env.example", payload)
             self.assertIn('"user_config_path"', payload)
+            self.assertIn("AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN", payload)
 
     def test_push_preview_does_not_run_doctor_before_preview(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
-                "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN=root-folder\n",
+                "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
             stdout = StringIO()
             original_cwd = Path.cwd()
-            client = _FakeFeishuClient()
             preview = PushPreview(
+                backend_name="feishu",
                 feature_name="feature-a",
                 resolved_repo_name="remote-repo",
-                remote_root_folder_token="root-folder",
-                remote_repo_folder_token="root-folder/remote-repo",
-                remote_feature_folder_token="root-folder/remote-repo/feature-a",
+                tracker_root_locator="root-folder",
+                tracker_repo_locator="root-folder/remote-repo",
+                tracker_feature_locator="root-folder/remote-repo/feature-a",
                 canonical_files=["spec.md"],
                 will_create=["spec.md"],
                 will_overwrite=[],
@@ -85,10 +66,7 @@ class CliTests(unittest.TestCase):
             try:
                 os.chdir(repo_root)
                 with (
-                    patch(
-                        "feishu_issue_tracker.cli.LarkCliFeishuClient",
-                        return_value=client,
-                    ),
+                    patch("feishu_issue_tracker.cli.resolve_backend", return_value=_FakeBackend()),
                     patch("feishu_issue_tracker.cli.PushService") as push_service_cls,
                     redirect_stdout(stdout),
                 ):
@@ -100,24 +78,25 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             payload = stdout.getvalue()
             self.assertIn('"mode": "preview"', payload)
-            self.assertEqual(client.doctor_calls, 0)
+            self.assertIn('"backend": "feishu"', payload)
 
     def test_pull_returns_structured_execution_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
-                "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN=root-folder\n",
+                "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
             stdout = StringIO()
             original_cwd = Path.cwd()
             preview = PullPreview(
+                backend_name="feishu",
                 feature_name="feature-a",
                 resolved_repo_name="remote-repo",
-                remote_root_folder_token="root-folder",
-                remote_repo_folder_token="root-folder/remote-repo",
-                remote_feature_folder_token="root-folder/remote-repo/feature-a",
+                tracker_root_locator="root-folder",
+                tracker_repo_locator="root-folder/remote-repo",
+                tracker_feature_locator="root-folder/remote-repo/feature-a",
                 canonical_files=["spec.md"],
                 will_create=["spec.md"],
                 will_overwrite=[],
@@ -130,19 +109,7 @@ class CliTests(unittest.TestCase):
             try:
                 os.chdir(repo_root)
                 with (
-                    patch(
-                        "feishu_issue_tracker.cli.LarkCliFeishuClient",
-                        return_value=_FakeFeishuClient(
-                            LarkCliDoctorResult(
-                                installed=True,
-                                executable="lark-cli.cmd",
-                                ready=True,
-                                status="ready",
-                                hint=None,
-                                recommended_command=None,
-                            )
-                        ),
-                    ),
+                    patch("feishu_issue_tracker.cli.resolve_backend", return_value=_FakeBackend()),
                     patch("feishu_issue_tracker.cli.PullService") as pull_service_cls,
                     redirect_stdout(stdout),
                 ):
@@ -159,23 +126,25 @@ class CliTests(unittest.TestCase):
             self.assertIn('"mode": "execute"', payload)
             self.assertIn('"pull_result"', payload)
             self.assertIn('"feature_name": "feature-a"', payload)
+            self.assertIn('"backend": "feishu"', payload)
 
     def test_pull_returns_structured_preview_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
-                "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN=root-folder\n",
+                "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
             stdout = StringIO()
             original_cwd = Path.cwd()
             preview = PullPreview(
+                backend_name="feishu",
                 feature_name="feature-a",
                 resolved_repo_name="remote-repo",
-                remote_root_folder_token="root-folder",
-                remote_repo_folder_token="root-folder/remote-repo",
-                remote_feature_folder_token="root-folder/remote-repo/feature-a",
+                tracker_root_locator="root-folder",
+                tracker_repo_locator="root-folder/remote-repo",
+                tracker_feature_locator="root-folder/remote-repo/feature-a",
                 canonical_files=["spec.md"],
                 will_create=["spec.md"],
                 will_overwrite=[],
@@ -188,19 +157,7 @@ class CliTests(unittest.TestCase):
             try:
                 os.chdir(repo_root)
                 with (
-                    patch(
-                        "feishu_issue_tracker.cli.LarkCliFeishuClient",
-                        return_value=_FakeFeishuClient(
-                            LarkCliDoctorResult(
-                                installed=True,
-                                executable="lark-cli.cmd",
-                                ready=True,
-                                status="ready",
-                                hint=None,
-                                recommended_command=None,
-                            )
-                        ),
-                    ),
+                    patch("feishu_issue_tracker.cli.resolve_backend", return_value=_FakeBackend()),
                     patch("feishu_issue_tracker.cli.PullService") as pull_service_cls,
                     redirect_stdout(stdout),
                 ):
@@ -220,17 +177,18 @@ class CliTests(unittest.TestCase):
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
-                "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN=root-folder\n",
+                "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
             stdout = StringIO()
             original_cwd = Path.cwd()
             preview = PullPreview(
+                backend_name="feishu",
                 feature_name="feature-a",
                 resolved_repo_name="remote-repo",
-                remote_root_folder_token="root-folder",
-                remote_repo_folder_token="root-folder/remote-repo",
-                remote_feature_folder_token="root-folder/remote-repo/feature-a",
+                tracker_root_locator="root-folder",
+                tracker_repo_locator="root-folder/remote-repo",
+                tracker_feature_locator="root-folder/remote-repo/feature-a",
                 canonical_files=["spec.md"],
                 will_create=["spec.md"],
                 will_overwrite=["spec.md"],
@@ -243,19 +201,7 @@ class CliTests(unittest.TestCase):
             try:
                 os.chdir(repo_root)
                 with (
-                    patch(
-                        "feishu_issue_tracker.cli.LarkCliFeishuClient",
-                        return_value=_FakeFeishuClient(
-                            LarkCliDoctorResult(
-                                installed=True,
-                                executable="lark-cli.cmd",
-                                ready=True,
-                                status="ready",
-                                hint=None,
-                                recommended_command=None,
-                            )
-                        ),
-                    ),
+                    patch("feishu_issue_tracker.cli.resolve_backend", return_value=_FakeBackend()),
                     patch("feishu_issue_tracker.cli.PullService") as pull_service_cls,
                     redirect_stdout(stdout),
                 ):
@@ -270,3 +216,26 @@ class CliTests(unittest.TestCase):
             payload = stdout.getvalue()
             self.assertIn('"error": "confirmation_required"', payload)
             self.assertIn('"preview"', payload)
+
+    def test_reports_not_implemented_backend_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_root = Path(tempdir)
+            (repo_root / ".git").mkdir()
+            (repo_root / ".env").write_text(
+                "AGENT_ISSUE_TRACKER_BACKEND=git\n"
+                "AGENT_ISSUE_TRACKER_GIT_REPO_PATH=D:/tracker\n",
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(repo_root)
+                with redirect_stdout(stdout):
+                    exit_code = main(["push", "--feature", "feature-a"])
+            finally:
+                os.chdir(original_cwd)
+
+            self.assertEqual(exit_code, 1)
+            payload = stdout.getvalue()
+            self.assertIn('"backend": "git"', payload)
+            self.assertIn("not implemented", payload.lower())

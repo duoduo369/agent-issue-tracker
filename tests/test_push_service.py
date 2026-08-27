@@ -3,10 +3,14 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 
-from feishu_issue_tracker.config import ResolvedConfig
+from feishu_issue_tracker.config import (
+    FEISHU_ROOT_FOLDER_TOKEN_KEY,
+    REPO_NAME_KEY,
+    ResolvedConfig,
+)
 from feishu_issue_tracker.layout import ScratchLayoutProvider
 from feishu_issue_tracker.push_service import PushConfirmationRequired, PushService
-from feishu_issue_tracker.sidecar import FeatureSidecar
+from feishu_issue_tracker.sidecar import FeatureSidecar, sidecar_path
 
 
 @dataclass
@@ -17,7 +21,9 @@ class FakeStatusResult:
     remote_only: list[str]
 
 
-class FakeFeishuClient:
+class FakeBackend:
+    backend_name = "feishu"
+
     def __init__(self) -> None:
         self.ready_checks = 0
         self.status_calls: list[tuple[str, str]] = []
@@ -46,23 +52,35 @@ class FakeFeishuClient:
     def ensure_ready(self) -> None:
         self.ready_checks += 1
 
-    def find_child_folder(self, parent_token: str, name: str) -> str | None:
-        return self.child_folders.get((parent_token, name))
+    def root_locator_from_config(self, *, resolved_config: ResolvedConfig) -> str:
+        return resolved_config.values[FEISHU_ROOT_FOLDER_TOKEN_KEY]
 
-    def create_folder(self, parent_token: str, name: str) -> str:
-        token = f"{parent_token}/{name}"
-        self.created_folders.append((parent_token, name))
-        self.child_folders[(parent_token, name)] = token
+    def find_remote_repo(self, *, root_locator: str, repo_name: str) -> str | None:
+        return self.child_folders.get((root_locator, repo_name))
+
+    def find_remote_feature(self, *, repo_locator: str, feature_name: str) -> str | None:
+        return self.child_folders.get((repo_locator, feature_name))
+
+    def create_remote_repo(self, *, root_locator: str, repo_name: str) -> str:
+        token = f"{root_locator}/{repo_name}"
+        self.created_folders.append((root_locator, repo_name))
+        self.child_folders[(root_locator, repo_name)] = token
         return token
 
-    def status(self, *, repo_root: Path, local_dir: Path, folder_token: str) -> FakeStatusResult:
+    def create_remote_feature(self, *, repo_locator: str, feature_name: str) -> str:
+        token = f"{repo_locator}/{feature_name}"
+        self.created_folders.append((repo_locator, feature_name))
+        self.child_folders[(repo_locator, feature_name)] = token
+        return token
+
+    def status(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> FakeStatusResult:
         rel_local_dir = local_dir.relative_to(repo_root).as_posix()
-        self.status_calls.append((rel_local_dir, folder_token))
+        self.status_calls.append((rel_local_dir, remote_locator))
         return self.status_result
 
-    def push(self, *, repo_root: Path, local_dir: Path, folder_token: str) -> dict:
+    def push(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> dict:
         rel_local_dir = local_dir.relative_to(repo_root).as_posix()
-        self.push_calls.append((rel_local_dir, folder_token))
+        self.push_calls.append((rel_local_dir, remote_locator))
         return self.push_result
 
 
@@ -78,24 +96,25 @@ class PushServiceTests(unittest.TestCase):
         (feature_dir / "issues" / "01.md").write_text("# issue 1\n", encoding="utf-8")
         (feature_dir / "draft.txt").write_text("scratch note\n", encoding="utf-8")
         self.feature_dir = feature_dir
-        self.sidecar_path = feature_dir / ".feishu-sync.json"
-        self.client = FakeFeishuClient()
-        self.client.child_folders[("root-folder", "remote-repo")] = "root-folder/remote-repo"
-        self.client.child_folders[("root-folder/remote-repo", "feature-a")] = (
+        self.sidecar_path = sidecar_path(feature_dir, "feishu")
+        self.backend = FakeBackend()
+        self.backend.child_folders[("root-folder", "remote-repo")] = "root-folder/remote-repo"
+        self.backend.child_folders[("root-folder/remote-repo", "feature-a")] = (
             "root-folder/remote-repo/feature-a"
         )
         self.service = PushService(
             layout_provider=ScratchLayoutProvider(),
-            feishu_client=self.client,
+            backend=self.backend,
         )
         self.config = ResolvedConfig(
+            backend="feishu",
             values={
-                "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN": "root-folder",
-                "FEISHU_ISSUE_TRACKER_REPO_NAME": "remote-repo",
+                FEISHU_ROOT_FOLDER_TOKEN_KEY: "root-folder",
+                REPO_NAME_KEY: "remote-repo",
             },
             sources={
-                "FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN": "env",
-                "FEISHU_ISSUE_TRACKER_REPO_NAME": "env",
+                FEISHU_ROOT_FOLDER_TOKEN_KEY: "env",
+                REPO_NAME_KEY: "env",
             },
             missing_keys=[],
         )
@@ -118,7 +137,9 @@ class PushServiceTests(unittest.TestCase):
         self.assertEqual(preview.remote_extra_files, ["notes.txt"])
         self.assertEqual(preview.local_extra_files, ["draft.txt"])
         self.assertTrue(preview.confirmation_required)
-        self.assertEqual(self.client.status_calls[0][1], "root-folder/remote-repo/feature-a")
+        self.assertEqual(preview.backend_name, "feishu")
+        self.assertEqual(preview.tracker_feature_locator, "root-folder/remote-repo/feature-a")
+        self.assertEqual(self.backend.status_calls[0][1], "root-folder/remote-repo/feature-a")
 
     def test_execute_requires_explicit_confirmation(self) -> None:
         with self.assertRaises(PushConfirmationRequired):
@@ -139,20 +160,22 @@ class PushServiceTests(unittest.TestCase):
             confirm=True,
         )
 
-        self.assertEqual(self.client.ready_checks, 1)
+        self.assertEqual(self.backend.ready_checks, 1)
         self.assertEqual(result.preview.resolved_repo_name, "remote-repo")
-        self.assertEqual(self.client.push_calls[0][1], "root-folder/remote-repo/feature-a")
+        self.assertEqual(self.backend.push_calls[0][1], "root-folder/remote-repo/feature-a")
         sidecar = FeatureSidecar.load(self.sidecar_path)
-        self.assertEqual(sidecar.remote_feature_folder_token, "root-folder/remote-repo/feature-a")
+        self.assertEqual(sidecar.backend_name, "feishu")
+        self.assertEqual(sidecar.feature_locator, "root-folder/remote-repo/feature-a")
         self.assertEqual(sidecar.resolved_repo_name, "remote-repo")
 
     def test_reuses_existing_sidecar_mapping(self) -> None:
         FeatureSidecar(
+            backend_name="feishu",
             feature_name="feature-a",
             resolved_repo_name="stable-repo",
-            remote_root_folder_token="stable-root",
-            remote_repo_folder_token="stable-root/stable-repo",
-            remote_feature_folder_token="stable-root/stable-repo/feature-a",
+            root_locator="stable-root",
+            repo_locator="stable-root/stable-repo",
+            feature_locator="stable-root/stable-repo/feature-a",
         ).save(self.sidecar_path)
 
         preview = self.service.preview_push(
@@ -163,15 +186,16 @@ class PushServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(preview.resolved_repo_name, "stable-repo")
-        self.assertEqual(self.client.status_calls[0][1], "stable-root/stable-repo/feature-a")
+        self.assertEqual(self.backend.status_calls[0][1], "stable-root/stable-repo/feature-a")
 
     def test_ignores_sidecar_mapping_when_feature_name_does_not_match(self) -> None:
         FeatureSidecar(
+            backend_name="feishu",
             feature_name="feature-b",
             resolved_repo_name="stable-repo",
-            remote_root_folder_token="stable-root",
-            remote_repo_folder_token="stable-root/stable-repo",
-            remote_feature_folder_token="stable-root/stable-repo/feature-b",
+            root_locator="stable-root",
+            repo_locator="stable-root/stable-repo",
+            feature_locator="stable-root/stable-repo/feature-b",
         ).save(self.sidecar_path)
 
         preview = self.service.preview_push(
@@ -182,4 +206,24 @@ class PushServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(preview.resolved_repo_name, "remote-repo")
-        self.assertEqual(self.client.status_calls[0][1], "root-folder/remote-repo/feature-a")
+        self.assertEqual(self.backend.status_calls[0][1], "root-folder/remote-repo/feature-a")
+
+    def test_ignores_other_backend_sidecar(self) -> None:
+        FeatureSidecar(
+            backend_name="git",
+            feature_name="feature-a",
+            resolved_repo_name="git-repo",
+            root_locator="git-root",
+            repo_locator="git-root/git-repo",
+            feature_locator="git-root/git-repo/feature-a",
+        ).save(sidecar_path(self.feature_dir, "git"))
+
+        preview = self.service.preview_push(
+            repo_root=self.repo_root,
+            cwd=self.feature_dir,
+            feature_name=None,
+            resolved_config=self.config,
+        )
+
+        self.assertEqual(preview.resolved_repo_name, "remote-repo")
+        self.assertEqual(self.backend.status_calls[0][1], "root-folder/remote-repo/feature-a")

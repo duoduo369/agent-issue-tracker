@@ -1,10 +1,15 @@
 ---
-name: push-issue-to-feishu-tracker
-description: "Preview and push one `.scratch/<feature>` issue bundle to Feishu Drive."
+name: push-to-issue-tracker
+description: "Preview and push one `.scratch/<feature>` canonical bundle to the configured issue tracker backend."
 disable-model-invocation: true
 ---
 
-在用户明确要求把本地 `.scratch/<feature>/` 产物推送到飞书云盘时使用。
+在用户明确要求把本地 `.scratch/<feature>/` canonical bundle 推送到 issue tracker 时使用。
+
+先阅读：
+
+- `Reference/push.md`
+- `Reference/backends/feishu.md`（当当前 backend 是 `feishu` 时）
 
 ## Steps
 
@@ -14,27 +19,15 @@ disable-model-invocation: true
 - 如果用户没有指定，就依赖当前目录自动识别。
 - 如果工具返回无法识别 feature，再向用户确认 feature 名。
 
-2. 先做预演，让工具在真实上下文里暴露缺失配置或依赖问题。
+2. 先做预演。
 
 - 在目标仓库中运行 `python -m feishu_issue_tracker push`；必要时补 `--feature <name>`。
-- 如果 `config.missing_keys` 非空，向用户索取：
-  - `FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN`：必填
-  - `FEISHU_ISSUE_TRACKER_REPO_NAME`：可选
-- 让用户把这些值写进环境变量、仓库根目录 `.env` 或工具返回的 user-level config 文件；优先推荐直接参考 `.env.example` 在仓库根目录创建 `.env`。
-- 如果工具返回 `recommended_command`，优先按照它引导用户完成初始化或登录，再重新执行预演。
-- 优先按 `bot-first` 理解结果：如果 bot 能访问目标文件夹，不要额外要求用户授权。
-- 只有当工具明确返回 `user_identity_missing` 或 `missing_scope` 时，才进入 `user-fallback`。
-- 一旦进入 `user-fallback`，优先引导用户一次性完成完整 user scope 集合，而不是边跑边补：
-  - `space:document:retrieve`
-  - `space:folder:create`
-  - `drive:drive.metadata:readonly`
-  - `drive:file:upload`
-  - `drive:file:download`
-- 如果开发者后台刚新增了这些用户权限，先让用户发布一个新版本，再做这一轮合并授权。
+- 如果返回 `missing_config`，按 `missing_keys` 引导用户补齐配置；优先建议参考仓库根目录 `.env.example` 创建 `.env`。
+- 如果返回 `recommended_command`，优先按推荐命令完成初始化或登录，再重新执行预演。
 
-3. 清楚地总结预演结果。
+3. 清楚总结 preview。
 
-- 说明解析出的 repo 名和 feature 名。
+- 说明当前 backend、repo 名和 feature 名。
 - 只在非空时汇报这些桶：
   - `will_create`
   - `will_overwrite`
@@ -51,10 +44,9 @@ disable-model-invocation: true
 5. 执行 push。
 
 - 运行 `python -m feishu_issue_tracker push --confirm`；必要时补 `--feature <name>`。
-- 如果工具提示 `lark-cli` 未安装、未配置或未登录，停止执行并把问题告诉用户，不要绕过这条路径去直接写飞书。
 
 ## Done When
 
 - 用户已经看过预演结果。
 - 用户确认后，push 已执行成功。
-- 你已经告知远端 repo/feature 路径，并说明本地 `.feishu-sync.json` sidecar 已更新。
+- 你已经告知 backend 目标位置，并说明对应 backend sidecar 已更新。

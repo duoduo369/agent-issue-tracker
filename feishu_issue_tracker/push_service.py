@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from feishu_issue_tracker.backend import PersistenceBackend
 from feishu_issue_tracker.config import ResolvedConfig
 from feishu_issue_tracker.layout import ScratchLayoutProvider
-from feishu_issue_tracker.sidecar import FeatureSidecar
+from feishu_issue_tracker.sidecar import FeatureSidecar, sidecar_path
 from feishu_issue_tracker.sync_common import canonical_staging_dir, resolve_push_binding
 
 
 @dataclass(frozen=True)
 class PushPreview:
+    backend_name: str
     feature_name: str
     resolved_repo_name: str
-    remote_root_folder_token: str
-    remote_repo_folder_token: str | None
-    remote_feature_folder_token: str | None
+    tracker_root_locator: str
+    tracker_repo_locator: str | None
+    tracker_feature_locator: str | None
     canonical_files: list[str]
     will_create: list[str]
     will_overwrite: list[str]
@@ -40,9 +41,9 @@ class PushConfirmationRequired(RuntimeError):
 
 
 class PushService:
-    def __init__(self, *, layout_provider: ScratchLayoutProvider, feishu_client: object) -> None:
+    def __init__(self, *, layout_provider: ScratchLayoutProvider, backend: PersistenceBackend) -> None:
         self.layout_provider = layout_provider
-        self.feishu_client = feishu_client
+        self.backend = backend
 
     def preview_push(
         self,
@@ -68,19 +69,20 @@ class PushService:
             feature_dir=feature_dir,
             resolved_config=resolved_config,
             layout_provider=self.layout_provider,
-            feishu_client=self.feishu_client,
+            backend=self.backend,
         )
 
         canonical_rel_paths = [item.rel_path for item in canonical_files]
         local_extra_files = self.layout_provider.collect_local_extra_files(feature_dir)
 
-        if binding.remote_feature_folder_token is None:
+        if binding.tracker_feature_locator is None:
             return PushPreview(
+                backend_name=binding.backend_name,
                 feature_name=feature,
                 resolved_repo_name=binding.resolved_repo_name,
-                remote_root_folder_token=binding.remote_root_folder_token,
-                remote_repo_folder_token=binding.remote_repo_folder_token,
-                remote_feature_folder_token=None,
+                tracker_root_locator=binding.tracker_root_locator,
+                tracker_repo_locator=binding.tracker_repo_locator,
+                tracker_feature_locator=None,
                 canonical_files=canonical_rel_paths,
                 will_create=canonical_rel_paths,
                 will_overwrite=[],
@@ -92,10 +94,10 @@ class PushService:
             )
 
         with canonical_staging_dir(repo_root, canonical_files) as staging_dir:
-            status_result = self.feishu_client.status(
+            status_result = self.backend.status(
                 repo_root=repo_root,
                 local_dir=staging_dir,
-                folder_token=binding.remote_feature_folder_token,
+                remote_locator=binding.tracker_feature_locator,
             )
 
         remote_only_canonical = [
@@ -111,11 +113,12 @@ class PushService:
             or local_extra_files
         )
         return PushPreview(
+            backend_name=binding.backend_name,
             feature_name=feature,
             resolved_repo_name=binding.resolved_repo_name,
-            remote_root_folder_token=binding.remote_root_folder_token,
-            remote_repo_folder_token=binding.remote_repo_folder_token,
-            remote_feature_folder_token=binding.remote_feature_folder_token,
+            tracker_root_locator=binding.tracker_root_locator,
+            tracker_repo_locator=binding.tracker_repo_locator,
+            tracker_feature_locator=binding.tracker_feature_locator,
             canonical_files=canonical_rel_paths,
             will_create=status_result.local_only,
             will_overwrite=status_result.modified,
@@ -136,7 +139,7 @@ class PushService:
         confirm: bool,
     ) -> PushExecutionResult:
         if confirm:
-            self.feishu_client.ensure_ready()
+            self.backend.ensure_ready()
         preview = self.preview_push(
             repo_root=repo_root,
             cwd=cwd,
@@ -146,42 +149,44 @@ class PushService:
         if not confirm:
             raise PushConfirmationRequired(preview)
 
-        remote_repo_folder_token = preview.remote_repo_folder_token
-        if remote_repo_folder_token is None:
-            remote_repo_folder_token = self.feishu_client.create_folder(
-                preview.remote_root_folder_token,
-                preview.resolved_repo_name,
+        tracker_repo_locator = preview.tracker_repo_locator
+        if tracker_repo_locator is None:
+            tracker_repo_locator = self.backend.create_remote_repo(
+                root_locator=preview.tracker_root_locator,
+                repo_name=preview.resolved_repo_name,
             )
-        remote_feature_folder_token = preview.remote_feature_folder_token
-        if remote_feature_folder_token is None:
-            remote_feature_folder_token = self.feishu_client.create_folder(
-                remote_repo_folder_token,
-                preview.feature_name,
+        tracker_feature_locator = preview.tracker_feature_locator
+        if tracker_feature_locator is None:
+            tracker_feature_locator = self.backend.create_remote_feature(
+                repo_locator=tracker_repo_locator,
+                feature_name=preview.feature_name,
             )
 
         feature_dir = self.layout_provider.feature_dir(repo_root, preview.feature_name)
         canonical_files = self.layout_provider.collect_canonical_files(feature_dir)
         with canonical_staging_dir(repo_root, canonical_files) as staging_dir:
-            push_result = self.feishu_client.push(
+            push_result = self.backend.push(
                 repo_root=repo_root,
                 local_dir=staging_dir,
-                folder_token=remote_feature_folder_token,
+                remote_locator=tracker_feature_locator,
             )
 
         FeatureSidecar(
+            backend_name=preview.backend_name,
             feature_name=preview.feature_name,
             resolved_repo_name=preview.resolved_repo_name,
-            remote_root_folder_token=preview.remote_root_folder_token,
-            remote_repo_folder_token=remote_repo_folder_token,
-            remote_feature_folder_token=remote_feature_folder_token,
-        ).save(feature_dir / self.layout_provider.sidecar_name)
+            root_locator=preview.tracker_root_locator,
+            repo_locator=tracker_repo_locator,
+            feature_locator=tracker_feature_locator,
+        ).save(sidecar_path(feature_dir, preview.backend_name))
 
         final_preview = PushPreview(
+            backend_name=preview.backend_name,
             feature_name=preview.feature_name,
             resolved_repo_name=preview.resolved_repo_name,
-            remote_root_folder_token=preview.remote_root_folder_token,
-            remote_repo_folder_token=remote_repo_folder_token,
-            remote_feature_folder_token=remote_feature_folder_token,
+            tracker_root_locator=preview.tracker_root_locator,
+            tracker_repo_locator=tracker_repo_locator,
+            tracker_feature_locator=tracker_feature_locator,
             canonical_files=preview.canonical_files,
             will_create=preview.will_create,
             will_overwrite=preview.will_overwrite,

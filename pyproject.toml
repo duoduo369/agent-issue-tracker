@@ -1,7 +1,7 @@
 [project]
-name = "feishu-issue-tracker"
+name = "agent-issue-tracker"
 version = "0.1.0"
-description = "Local-first Feishu issue tracker sync utilities."
+description = "Local-first issue tracker sync utilities with pluggable backends."
 requires-python = ">=3.12"
 
 [tool.unittest]

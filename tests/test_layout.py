@@ -16,7 +16,8 @@ class ScratchLayoutProviderTests(unittest.TestCase):
         (self.feature_dir / "map.md").write_text("# map\n", encoding="utf-8")
         (self.feature_dir / "issues" / "01.md").write_text("# issue\n", encoding="utf-8")
         (self.feature_dir / "notes.txt").write_text("local only\n", encoding="utf-8")
-        (self.feature_dir / ".feishu-sync.json").write_text("{}", encoding="utf-8")
+        (self.feature_dir / ".issue-tracker.feishu.json").write_text("{}", encoding="utf-8")
+        (self.feature_dir / ".issue-tracker.git.json").write_text("{}", encoding="utf-8")
         self.provider = ScratchLayoutProvider()
 
     def tearDown(self) -> None:

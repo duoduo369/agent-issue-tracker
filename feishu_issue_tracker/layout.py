@@ -19,8 +19,6 @@ class CanonicalFile:
 
 
 class ScratchLayoutProvider:
-    sidecar_name = ".feishu-sync.json"
-
     def resolve_feature_name(
         self,
         *,
@@ -91,9 +89,7 @@ class ScratchLayoutProvider:
             if not path.is_file():
                 continue
             rel_path = path.relative_to(feature_dir).as_posix()
-            if rel_path == self.sidecar_name:
-                continue
-            if self.is_canonical_rel_path(rel_path):
+            if self.is_canonical_rel_path(rel_path) or self.is_sidecar_rel_path(rel_path):
                 continue
             extras.append(rel_path)
         return extras
@@ -102,6 +98,15 @@ class ScratchLayoutProvider:
         if rel_path in {"spec.md", "map.md"}:
             return True
         return rel_path.startswith("issues/") and rel_path.count("/") == 1 and rel_path.endswith(".md")
+
+    def is_sidecar_rel_path(self, rel_path: str) -> bool:
+        if rel_path == ".feishu-sync.json":
+            return True
+        return (
+            rel_path.startswith(".issue-tracker.")
+            and rel_path.endswith(".json")
+            and "/" not in rel_path
+        )
 
     def restore_destination(self, feature_dir: Path, rel_path: str) -> Path:
         if not self.is_canonical_rel_path(rel_path):
