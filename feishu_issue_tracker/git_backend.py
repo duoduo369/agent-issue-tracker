@@ -66,13 +66,15 @@ class GitPersistenceBackend:
         candidate.mkdir(parents=True, exist_ok=True)
         return str(candidate)
 
-    def delete_remote_paths(self, *, remote_locator: str, rel_paths: list[str]) -> None:
+    def delete_remote_paths(self, *, remote_locator: str, rel_paths: list[str]) -> int:
         remote_dir = Path(remote_locator)
+        deleted = 0
         for rel_path in rel_paths:
             candidate = remote_dir / rel_path
             if candidate.exists():
-                candidate.unlink()
-                self._prune_empty_parents(candidate.parent, stop_at=remote_dir)
+                self._delete_path(candidate, stop_at=remote_dir)
+                deleted += 1
+        return deleted
 
     def status(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> SyncStatus:
         del repo_root
@@ -125,7 +127,6 @@ class GitPersistenceBackend:
                 self._pull_rebase(strategy_option="theirs")
                 retry_summary = self._sync_remote_tree(local_dir=local_dir, remote_dir=remote_dir)
                 copy_summary["copied"] = retry_summary["copied"]
-                copy_summary["deleted_remote"] = retry_summary["deleted_remote"]
                 committed = self._commit_if_needed(pathspec=pathspec) or committed
                 push_attempts += 1
                 self._run_git("push")
@@ -134,7 +135,6 @@ class GitPersistenceBackend:
         return {
             "summary": {
                 "copied": copy_summary["copied"],
-                "deleted_remote": copy_summary["deleted_remote"],
                 "committed": committed,
                 "pushed": pushed,
                 "rebase_attempted": rebase_attempted,
@@ -157,23 +157,13 @@ class GitPersistenceBackend:
         self._replace_tree(destination=local_dir, source=remote_dir)
         return {
             "summary": {
-                "downloaded": len(self._collect_files(local_dir)),
+                "restored_files": len(self._collect_files(local_dir)),
                 "updated_workspace": True,
             }
         }
 
     def _sync_remote_tree(self, *, local_dir: Path, remote_dir: Path) -> dict[str, int]:
         local_files = self._collect_files(local_dir)
-        remote_files = self._collect_files(remote_dir) if remote_dir.exists() else {}
-
-        deleted_remote = 0
-        for rel_path in sorted(remote_files):
-            if rel_path in local_files or not self._is_canonical_rel_path(rel_path):
-                continue
-            target = remote_dir / rel_path
-            target.unlink()
-            deleted_remote += 1
-            self._prune_empty_parents(target.parent, stop_at=remote_dir)
 
         copied = 0
         for rel_path, source in local_files.items():
@@ -183,7 +173,7 @@ class GitPersistenceBackend:
                 shutil.copy2(source, destination)
                 copied += 1
 
-        return {"copied": copied, "deleted_remote": deleted_remote}
+        return {"copied": copied}
 
     def _commit_if_needed(self, *, pathspec: str) -> bool:
         self._run_git("add", "-A", "--", pathspec)
@@ -264,10 +254,9 @@ class GitPersistenceBackend:
                 files[path.relative_to(root).as_posix()] = path
         return files
 
-    def _is_canonical_rel_path(self, rel_path: str) -> bool:
-        if rel_path in {"spec.md", "map.md"}:
-            return True
-        return rel_path.startswith("issues/") and rel_path.count("/") == 1 and rel_path.endswith(".md")
+    def _delete_path(self, path: Path, *, stop_at: Path) -> None:
+        path.unlink()
+        self._prune_empty_parents(path.parent, stop_at=stop_at)
 
     def _prune_empty_parents(self, directory: Path, *, stop_at: Path) -> None:
         current = directory

@@ -165,11 +165,17 @@ class PushService:
         feature_dir = self.layout_provider.feature_dir(repo_root, preview.feature_name)
         canonical_files = self.layout_provider.collect_canonical_files(feature_dir)
         with canonical_staging_dir(repo_root, canonical_files) as staging_dir:
+            deleted_remote = self.backend.delete_remote_paths(
+                remote_locator=tracker_feature_locator,
+                rel_paths=preview.remote_only_canonical,
+            )
             push_result = self.backend.push(
                 repo_root=repo_root,
                 local_dir=staging_dir,
                 remote_locator=tracker_feature_locator,
             )
+        push_result.setdefault("summary", {})
+        push_result["summary"]["deleted_remote"] = deleted_remote
 
         FeatureSidecar(
             backend_name=preview.backend_name,

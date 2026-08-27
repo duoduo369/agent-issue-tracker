@@ -31,8 +31,8 @@ class FeishuPersistenceBackend:
     def create_remote_feature(self, *, repo_locator: str, feature_name: str) -> str:
         return self.client.create_folder(repo_locator, feature_name)
 
-    def delete_remote_paths(self, *, remote_locator: str, rel_paths: list[str]) -> None:
-        return None
+    def delete_remote_paths(self, *, remote_locator: str, rel_paths: list[str]) -> int:
+        return 0
 
     def status(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> SyncStatus:
         return self.client.status(repo_root=repo_root, local_dir=local_dir, folder_token=remote_locator)

@@ -106,6 +106,7 @@ class CliTests(unittest.TestCase):
                 local_only_canonical=[],
                 remote_extra_files=[],
                 local_extra_files=[],
+                overwrite_hint="Pull treats the tracker workspace copy as the source of truth.",
                 confirmation_required=False,
             )
             try:
@@ -117,7 +118,7 @@ class CliTests(unittest.TestCase):
                 ):
                     pull_service_cls.return_value.execute_pull.return_value = PullExecutionResult(
                         preview=preview,
-                        pull_result={"summary": {"downloaded": 1}},
+                        pull_result={"summary": {"restored_files": 1}},
                     )
                     exit_code = main(["pull", "--feature", "feature-a", "--confirm"])
             finally:
@@ -154,6 +155,7 @@ class CliTests(unittest.TestCase):
                 local_only_canonical=[],
                 remote_extra_files=[],
                 local_extra_files=[],
+                overwrite_hint="Pull treats the tracker workspace copy as the source of truth.",
                 confirmation_required=False,
             )
             try:
@@ -173,6 +175,7 @@ class CliTests(unittest.TestCase):
             self.assertIn('"mode": "preview"', payload)
             self.assertIn('"preview"', payload)
             self.assertIn('"feature_name": "feature-a"', payload)
+            self.assertIn('"overwrite_hint"', payload)
 
     def test_pull_confirmation_required_returns_structured_error(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -198,6 +201,7 @@ class CliTests(unittest.TestCase):
                 local_only_canonical=["map.md"],
                 remote_extra_files=[],
                 local_extra_files=[],
+                overwrite_hint="Pull treats the tracker workspace copy as the source of truth.",
                 confirmation_required=True,
             )
             try:

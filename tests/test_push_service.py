@@ -28,6 +28,7 @@ class FakeBackend:
         self.ready_checks = 0
         self.status_calls: list[tuple[str, str]] = []
         self.push_calls: list[tuple[str, str]] = []
+        self.delete_calls: list[tuple[str, tuple[str, ...]]] = []
         self.created_folders: list[tuple[str, str]] = []
         self.child_folders: dict[tuple[str, str], str] = {}
         self.status_result = FakeStatusResult(
@@ -77,6 +78,10 @@ class FakeBackend:
         rel_local_dir = local_dir.relative_to(repo_root).as_posix()
         self.status_calls.append((rel_local_dir, remote_locator))
         return self.status_result
+
+    def delete_remote_paths(self, *, remote_locator: str, rel_paths: list[str]) -> int:
+        self.delete_calls.append((remote_locator, tuple(rel_paths)))
+        return len(rel_paths)
 
     def push(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> dict:
         rel_local_dir = local_dir.relative_to(repo_root).as_posix()
@@ -162,6 +167,11 @@ class PushServiceTests(unittest.TestCase):
 
         self.assertEqual(self.backend.ready_checks, 1)
         self.assertEqual(result.preview.resolved_repo_name, "remote-repo")
+        self.assertEqual(
+            self.backend.delete_calls,
+            [("root-folder/remote-repo/feature-a", ("issues/02.md",))],
+        )
+        self.assertEqual(result.push_result["summary"]["deleted_remote"], 1)
         self.assertEqual(self.backend.push_calls[0][1], "root-folder/remote-repo/feature-a")
         sidecar = FeatureSidecar.load(self.sidecar_path)
         self.assertEqual(sidecar.backend_name, "feishu")
