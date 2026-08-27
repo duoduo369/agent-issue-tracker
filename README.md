@@ -39,6 +39,6 @@ AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=
 
 ## 文档分层
 
-- `Reference/`: skill 运行时要遵循的流程材料
-- `Docs/`: 面向开发者的架构说明和 backend 扩展契约
+- `reference/`: skill 运行时要遵循的流程材料
+- `docs/`: 面向开发者的架构说明和 backend 扩展契约
 - `DOMAIN_CONTEXT.md`: 共享语言和术语边界

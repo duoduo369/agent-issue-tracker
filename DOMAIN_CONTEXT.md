@@ -36,10 +36,10 @@ _Avoid_: 备份, 上传
 把当前 backend 中的 canonical bundle 恢复回 source repo，并以 backend 副本为最新持久化状态的操作。
 _Avoid_: 下载, 合并
 
-**Reference**:
+**reference**:
 skill 在执行时会读取的 agent-facing 材料，用来遵循项目流程或 backend 分支流程。
 _Avoid_: docs, manual
 
-**Docs**:
+**docs**:
 面向开发者的架构材料，用来说明项目的设计边界和扩展模型。
 _Avoid_: reference, 运行时说明
