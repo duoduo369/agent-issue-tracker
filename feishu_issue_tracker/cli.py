@@ -9,6 +9,7 @@ from pathlib import Path
 from feishu_issue_tracker.config import resolve_config
 from feishu_issue_tracker.feishu_cli import LarkCliDoctorResult, LarkCliError, LarkCliFeishuClient
 from feishu_issue_tracker.layout import FeatureResolutionError, RepoRootNotFoundError, ScratchLayoutProvider, find_repo_root
+from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullService
 from feishu_issue_tracker.push_service import PushConfirmationRequired, PushService
 
 
@@ -60,39 +61,80 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(_lark_cli_error_payload(lark_cli), indent=2))
             return 4
 
-        service = PushService(layout_provider=ScratchLayoutProvider(), feishu_client=client)
-        if args.confirm:
-            result = service.execute_push(
-                repo_root=repo_root,
-                cwd=Path.cwd(),
-                feature_name=args.feature,
-                resolved_config=resolved_config,
-                confirm=True,
-            )
-            payload = {
-                "ok": True,
-                "mode": "execute",
-                "preview": asdict(result.preview),
-                "push_result": result.push_result,
-            }
+        if args.command == "push":
+            service = PushService(layout_provider=ScratchLayoutProvider(), feishu_client=client)
+            if args.confirm:
+                result = service.execute_push(
+                    repo_root=repo_root,
+                    cwd=Path.cwd(),
+                    feature_name=args.feature,
+                    resolved_config=resolved_config,
+                    confirm=True,
+                )
+                payload = {
+                    "ok": True,
+                    "mode": "execute",
+                    "preview": asdict(result.preview),
+                    "push_result": result.push_result,
+                }
+            else:
+                preview = service.preview_push(
+                    repo_root=repo_root,
+                    cwd=Path.cwd(),
+                    feature_name=args.feature,
+                    resolved_config=resolved_config,
+                )
+                payload = {
+                    "ok": True,
+                    "mode": "preview",
+                    "preview": asdict(preview),
+                }
         else:
-            preview = service.preview_push(
-                repo_root=repo_root,
-                cwd=Path.cwd(),
-                feature_name=args.feature,
-                resolved_config=resolved_config,
-            )
-            payload = {
-                "ok": True,
-                "mode": "preview",
-                "preview": asdict(preview),
-            }
+            service = PullService(layout_provider=ScratchLayoutProvider(), feishu_client=client)
+            if args.confirm:
+                result = service.execute_pull(
+                    repo_root=repo_root,
+                    cwd=Path.cwd(),
+                    feature_name=args.feature,
+                    resolved_config=resolved_config,
+                    confirm=True,
+                )
+                payload = {
+                    "ok": True,
+                    "mode": "execute",
+                    "preview": asdict(result.preview),
+                    "pull_result": result.pull_result,
+                }
+            else:
+                preview = service.preview_pull(
+                    repo_root=repo_root,
+                    cwd=Path.cwd(),
+                    feature_name=args.feature,
+                    resolved_config=resolved_config,
+                )
+                payload = {
+                    "ok": True,
+                    "mode": "preview",
+                    "preview": asdict(preview),
+                }
         print(json.dumps(payload, indent=2))
         return 0
     except (FeatureResolutionError, RepoRootNotFoundError, ValueError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 1
     except PushConfirmationRequired as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "confirmation_required",
+                    "preview": asdict(exc.preview),
+                },
+                indent=2,
+            )
+        )
+        return 3
+    except PullConfirmationRequired as exc:
         print(
             json.dumps(
                 {
@@ -127,6 +169,9 @@ def build_parser() -> argparse.ArgumentParser:
     push_parser = subparsers.add_parser("push")
     push_parser.add_argument("--feature")
     push_parser.add_argument("--confirm", action="store_true")
+    pull_parser = subparsers.add_parser("pull")
+    pull_parser.add_argument("--feature")
+    pull_parser.add_argument("--confirm", action="store_true")
     return parser
 
 

@@ -66,6 +66,8 @@ class ScratchLayoutProvider:
         return sorted(files, key=lambda item: item.rel_path)
 
     def collect_local_extra_files(self, feature_dir: Path) -> list[str]:
+        if not feature_dir.exists():
+            return []
         extras: list[str] = []
         for path in sorted(feature_dir.rglob("*")):
             if not path.is_file():
@@ -82,6 +84,11 @@ class ScratchLayoutProvider:
         if rel_path in {"spec.md", "map.md"}:
             return True
         return rel_path.startswith("issues/") and rel_path.count("/") == 1 and rel_path.endswith(".md")
+
+    def restore_destination(self, feature_dir: Path, rel_path: str) -> Path:
+        if not self.is_canonical_rel_path(rel_path):
+            raise ValueError(f"{rel_path!r} is not a canonical path.")
+        return feature_dir / Path(rel_path)
 
 
 def find_repo_root(start: Path) -> Path:

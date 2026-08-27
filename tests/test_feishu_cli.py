@@ -1,5 +1,6 @@
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from feishu_issue_tracker.feishu_cli import (
@@ -322,6 +323,35 @@ class LarkCliFeishuClientTests(unittest.TestCase):
         self.assertEqual(
             result.payload["error"]["recommended_command"],
             'lark-cli auth login --scope "space:folder:create" --no-wait --json',
+        )
+
+    def test_pull_uses_overwrite_policy(self) -> None:
+        client = LarkCliFeishuClient(cli_executable="lark-cli.cmd")
+
+        with patch("feishu_issue_tracker.feishu_cli.subprocess.run") as run_mock:
+            run_mock.return_value = _CompletedProcess(0, stdout='{"ok": true, "data": {"summary": {}}}')
+
+            client.pull(
+                repo_root=Path("D:/repo"),
+                local_dir=Path("D:/repo/.scratch/staging"),
+                folder_token="folder-token",
+            )
+
+        self.assertEqual(
+            run_mock.call_args.args[0][1:],
+            [
+                "drive",
+                "+pull",
+                "--json",
+                "--local-dir",
+                ".scratch/staging",
+                "--folder-token",
+                "folder-token",
+                "--if-exists",
+                "overwrite",
+                "--as",
+                "bot",
+            ],
         )
 
 

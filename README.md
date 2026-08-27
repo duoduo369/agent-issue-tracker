@@ -13,6 +13,7 @@ todo: 未来可能也会支持superpowers的格式。
 ## 最简单的用法
 ```text
 用 /push-issue-to-feishu-tracker 推送 feishu-local-first-sync。
+用 /pull-issue-from-feishu-tracker 拉回 feishu-local-first-sync。
 ```
 
 ## 你通常只需要提供什么
@@ -21,6 +22,7 @@ todo: 未来可能也会支持superpowers的格式。
 - 如果 agent 没法自己判断要推哪一份内容，再补一句 feature 名
 
 如果 agent 提到 `folder token`，你不用自己拆，直接把整个飞书文件夹链接贴给它就行。
+如果 agent 让你确认拉取，同样直接明确回复“拉取”或“确认拉取”。
 
 
 ## 第一次使用时，你可能会被要求做什么

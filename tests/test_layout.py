@@ -53,3 +53,11 @@ class ScratchLayoutProviderTests(unittest.TestCase):
         extra_files = self.provider.collect_local_extra_files(self.feature_dir)
 
         self.assertEqual(extra_files, ["notes.txt"])
+
+    def test_maps_canonical_issue_file_to_restore_destination(self) -> None:
+        destination = self.provider.restore_destination(
+            self.feature_dir,
+            "issues/02.md",
+        )
+
+        self.assertEqual(destination, self.feature_dir / "issues" / "02.md")

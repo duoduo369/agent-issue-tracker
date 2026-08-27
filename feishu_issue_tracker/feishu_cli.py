@@ -204,6 +204,23 @@ class LarkCliFeishuClient:
         )
         return self._unwrap_data(payload)
 
+    def pull(self, *, repo_root: Path, local_dir: Path, folder_token: str) -> dict:
+        payload = self._run_drive_json(
+            [
+                "drive",
+                "+pull",
+                "--json",
+                "--local-dir",
+                local_dir.relative_to(repo_root).as_posix(),
+                "--folder-token",
+                folder_token,
+                "--if-exists",
+                "overwrite",
+            ],
+            cwd=repo_root,
+        )
+        return self._unwrap_data(payload)
+
     def _run_json(self, args: list[str], cwd: Path | None) -> dict:
         result = self._invoke_json(args, cwd)
         if result.returncode != 0:
