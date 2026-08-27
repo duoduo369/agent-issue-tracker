@@ -12,8 +12,8 @@ todo: 未来可能也会支持superpowers的格式。
 
 ## 最简单的用法
 ```text
-用 /push-issue-to-feishu-tracker 推送 feishu-local-first-sync。
-用 /pull-issue-from-feishu-tracker 拉回 feishu-local-first-sync。
+用 /push-issue-to-feishu-tracker 推送 feishu-local-first-sync
+用 /pull-issue-from-feishu-tracker 拉回 feishu-local-first-sync
 ```
 
 ## 你通常只需要提供什么

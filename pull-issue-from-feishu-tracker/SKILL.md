@@ -17,6 +17,7 @@ disable-model-invocation: true
 2. 先做体检，确认本地依赖状态。
 
 - 在目标仓库中运行 `python -m feishu_issue_tracker doctor`。
+- `doctor` 是仓库级体检，不接收 `--feature`；不要把用户给的 feature 透传给这一步。
 - 如果 `config.missing_keys` 非空，向用户索取：
   - `FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN`：必填
   - `FEISHU_ISSUE_TRACKER_REPO_NAME`：可选
@@ -35,10 +36,13 @@ disable-model-invocation: true
 3. 先做预演，不要直接写本地。
 
 - 在目标仓库中运行 `python -m feishu_issue_tracker pull`；必要时补 `--feature <name>`。
+- `pull` 才是 feature 级命令：如果用户显式给了 feature，就传给 `--feature`；否则只在当前目录已经位于 `.scratch/<feature>` 内时依赖自动识别。
 
 4. 清楚地总结预演结果。
 
 - 说明解析出的 repo 名和 feature 名。
+- 明确说明拉取范围是飞书根目录下的单个 repo 目录里的单个 feature 目录，也就是 `root/<repo-name>/<feature>/...`。
+- 明确提醒：这不是全量 repo 拉取，也不是跨项目批量拉取。
 - 只在非空时汇报这些桶：
   - `will_create`
   - `will_overwrite`
