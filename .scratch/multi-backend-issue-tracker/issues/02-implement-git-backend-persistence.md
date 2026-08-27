@@ -4,8 +4,8 @@
 
 **Blocked by:** None — 01 已完成，可开始实现。
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] Git Backend 可以在 `<source-repo>/<feature>/...` 目标布局下完成 Push，并保持与通用流程一致的 preview、确认和 extras 提示语义。
-- [ ] Git Backend 可以先更新 Tracker Workspace 再完成 Pull 恢复，并在 Pull 中以远端内容为准覆盖 Canonical Bundle。
-- [ ] Git Backend 的自动 commit、push、rebase 重试和 sidecar 隔离行为都有对应验证，且不会破坏 Feishu Backend 的既有行为。
+- [x] Git Backend 可以在 `<source-repo>/<feature>/...` 目标布局下完成 Push，并保持与通用流程一致的 preview、确认和 extras 提示语义。
+- [x] Git Backend 可以先更新 Tracker Workspace 再完成 Pull 恢复，并在 Pull 中以远端内容为准覆盖 Canonical Bundle。
+- [x] Git Backend 的自动 commit、push、rebase 重试和 sidecar 隔离行为都有对应验证，且不会破坏 Feishu Backend 的既有行为。
