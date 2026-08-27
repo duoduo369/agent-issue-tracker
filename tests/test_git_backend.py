@@ -67,6 +67,25 @@ class GitPersistenceBackendTests(unittest.TestCase):
 
         self.assertIn("remote", str(exc_info.exception).lower())
 
+    def test_ensure_ready_switches_to_configured_branch(self) -> None:
+        current_branch = _git(self.tracker_workspace, "branch", "--show-current").stdout.strip()
+        _git(self.tracker_workspace, "checkout", "-b", "issue-sync")
+        _git(self.tracker_workspace, "push", "-u", "origin", "issue-sync")
+        _git(self.tracker_workspace, "checkout", current_branch)
+
+        from feishu_issue_tracker.git_backend import GitPersistenceBackend
+
+        backend = GitPersistenceBackend(
+            tracker_repo_path=self.tracker_workspace,
+            branch="issue-sync",
+        )
+        backend.ensure_ready()
+
+        self.assertEqual(
+            _git(self.tracker_workspace, "branch", "--show-current").stdout.strip(),
+            "issue-sync",
+        )
+
     def test_status_classifies_canonical_and_extra_files(self) -> None:
         feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
         (feature_dir / "issues").mkdir(parents=True)
@@ -322,12 +341,25 @@ class GitPersistenceBackendTests(unittest.TestCase):
         (feature_dir / "issues" / "01.md").write_text("# local issue\n", encoding="utf-8")
         (feature_dir / "draft.txt").write_text("local extra\n", encoding="utf-8")
 
-        tracker_feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
-        (tracker_feature_dir / "issues").mkdir(parents=True)
+        local_tracker_feature_dir = self.tracker_workspace / self.source_repo.name / "feature-a"
+        (local_tracker_feature_dir / "issues").mkdir(parents=True)
+        (local_tracker_feature_dir / "spec.md").write_text("# stale spec\n", encoding="utf-8")
+        (local_tracker_feature_dir / "issues" / "01.md").write_text("# stale issue\n", encoding="utf-8")
+        _git(self.tracker_workspace, "add", ".")
+        _git(self.tracker_workspace, "commit", "-m", "seed stale tracker state")
+        _git(self.tracker_workspace, "push")
+
+        collaborator = self.root / "preview-collaborator"
+        _git(self.root, "clone", str(self.remote_repo), str(collaborator))
+        tracker_feature_dir = collaborator / self.source_repo.name / "feature-a"
+        (tracker_feature_dir / "issues").mkdir(parents=True, exist_ok=True)
         (tracker_feature_dir / "spec.md").write_text("# remote spec\n", encoding="utf-8")
         (tracker_feature_dir / "issues" / "01.md").write_text("# remote issue\n", encoding="utf-8")
         (tracker_feature_dir / "issues" / "02.md").write_text("# remote new issue\n", encoding="utf-8")
         (tracker_feature_dir / "notes.txt").write_text("remote extra\n", encoding="utf-8")
+        _git(collaborator, "add", ".")
+        _git(collaborator, "commit", "-m", "publish preview state")
+        _git(collaborator, "push")
 
         resolved_config = ResolvedConfig(
             backend="git",
@@ -355,6 +387,12 @@ class GitPersistenceBackendTests(unittest.TestCase):
         self.assertEqual(preview.local_extra_files, ["draft.txt"])
         self.assertIn("source of truth", preview.overwrite_hint)
         self.assertTrue(preview.confirmation_required)
+        self.assertEqual(
+            (self.tracker_workspace / self.source_repo.name / "feature-a" / "issues" / "02.md").read_text(
+                encoding="utf-8"
+            ),
+            "# remote new issue\n",
+        )
 
     def test_execute_pull_restores_only_canonical_files_from_git_backend(self) -> None:
         feature_dir = self.source_repo / ".scratch" / "feature-a"

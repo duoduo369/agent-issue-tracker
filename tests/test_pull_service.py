@@ -25,9 +25,10 @@ class FakeBackend:
     backend_name = "feishu"
 
     def __init__(self) -> None:
+        self.prepare_calls = 0
         self.ready_checks = 0
         self.status_calls: list[tuple[str, str]] = []
-        self.pull_calls: list[tuple[str, str]] = []
+        self.pull_calls: list[tuple[str, str, bool]] = []
         self.child_folders: dict[tuple[str, str], str] = {}
         self.status_result = FakeStatusResult(
             local_only=["map.md"],
@@ -45,6 +46,9 @@ class FakeBackend:
     def ensure_ready(self) -> None:
         self.ready_checks += 1
 
+    def prepare_pull_preview(self) -> None:
+        self.prepare_calls += 1
+
     def root_locator_from_config(self, *, resolved_config: ResolvedConfig) -> str:
         return resolved_config.values[FEISHU_ROOT_FOLDER_TOKEN_KEY]
 
@@ -59,9 +63,16 @@ class FakeBackend:
         self.status_calls.append((rel_local_dir, remote_locator))
         return self.status_result
 
-    def pull(self, *, repo_root: Path, local_dir: Path, remote_locator: str) -> dict:
+    def pull(
+        self,
+        *,
+        repo_root: Path,
+        local_dir: Path,
+        remote_locator: str,
+        refresh: bool = True,
+    ) -> dict:
         rel_local_dir = local_dir.relative_to(repo_root).as_posix()
-        self.pull_calls.append((rel_local_dir, remote_locator))
+        self.pull_calls.append((rel_local_dir, remote_locator, refresh))
         for rel_path, content in self.remote_files.items():
             destination = local_dir / rel_path
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +143,7 @@ class PullServiceTests(unittest.TestCase):
         self.assertIn("source of truth", preview.overwrite_hint)
         self.assertTrue(preview.confirmation_required)
         self.assertEqual(preview.backend_name, "feishu")
+        self.assertEqual(self.backend.prepare_calls, 1)
         self.assertEqual(preview.tracker_feature_locator, "root-folder/remote-repo/feature-a")
         self.assertEqual(self.backend.status_calls[0][1], "root-folder/remote-repo/feature-a")
 
@@ -163,6 +175,8 @@ class PullServiceTests(unittest.TestCase):
 
         self.assertEqual(self.backend.ready_checks, 1)
         self.assertEqual(result.preview.tracker_feature_locator, "root-folder/remote-repo/feature-a")
+        self.assertEqual(result.preview.backend_name, "feishu")
+        self.assertEqual(self.backend.pull_calls[0][2], False)
         self.assertEqual((self.feature_dir / "spec.md").read_text(encoding="utf-8"), "# remote spec\n")
         self.assertEqual(
             (self.feature_dir / "issues" / "02.md").read_text(encoding="utf-8"),

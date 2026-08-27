@@ -4,29 +4,31 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_BACKEND = "feishu"
 BACKEND_KEY = "AGENT_ISSUE_TRACKER_BACKEND"
 REPO_NAME_KEY = "AGENT_ISSUE_TRACKER_REPO_NAME"
 FEISHU_ROOT_FOLDER_TOKEN_KEY = "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN"
 GIT_REPO_PATH_KEY = "AGENT_ISSUE_TRACKER_GIT_REPO_PATH"
+GIT_BRANCH_KEY = "AGENT_ISSUE_TRACKER_GIT_BRANCH"
 LEGACY_CONFIG_ALIASES = {
     BACKEND_KEY: ["ISSUE_TRACKER_BACKEND"],
     REPO_NAME_KEY: ["ISSUE_TRACKER_REPO_NAME", "FEISHU_ISSUE_TRACKER_REPO_NAME"],
     FEISHU_ROOT_FOLDER_TOKEN_KEY: ["FEISHU_ISSUE_TRACKER_ROOT_FOLDER_TOKEN"],
     GIT_REPO_PATH_KEY: ["ISSUE_TRACKER_GIT_REPO_PATH"],
+    GIT_BRANCH_KEY: ["ISSUE_TRACKER_GIT_BRANCH"],
 }
 CANONICAL_CONFIG_KEYS = [
     BACKEND_KEY,
     REPO_NAME_KEY,
     FEISHU_ROOT_FOLDER_TOKEN_KEY,
     GIT_REPO_PATH_KEY,
+    GIT_BRANCH_KEY,
 ]
 BACKEND_REQUIRED_CONFIG_KEYS = {
     "feishu": [FEISHU_ROOT_FOLDER_TOKEN_KEY],
     "git": [GIT_REPO_PATH_KEY],
 }
-REQUIRED_CONFIG_KEYS = BACKEND_REQUIRED_CONFIG_KEYS[DEFAULT_BACKEND]
-OPTIONAL_CONFIG_KEYS = [REPO_NAME_KEY]
+REQUIRED_CONFIG_KEYS = [BACKEND_KEY]
+OPTIONAL_CONFIG_KEYS = [REPO_NAME_KEY, GIT_BRANCH_KEY]
 ALL_CONFIG_KEYS = [
     *CANONICAL_CONFIG_KEYS,
     *(alias for aliases in LEGACY_CONFIG_ALIASES.values() for alias in aliases),
@@ -76,7 +78,15 @@ def resolve_config(
         values[key] = value
         sources[key] = source
 
-    backend = values.get(BACKEND_KEY, DEFAULT_BACKEND).strip().lower() or DEFAULT_BACKEND
+    backend = values.get(BACKEND_KEY, "").strip().lower()
+    if not backend:
+        return ResolvedConfig(
+            backend="",
+            values=values,
+            sources=sources,
+            missing_keys=[BACKEND_KEY],
+            user_config_path=resolved_user_config_path,
+        )
     if backend not in BACKEND_REQUIRED_CONFIG_KEYS:
         raise ValueError(
             f"Unsupported {BACKEND_KEY} {backend!r}; expected one of "
@@ -95,23 +105,12 @@ def resolve_config(
 
 def default_user_config_path(env: dict[str, str] | None = None) -> Path:
     env_values = env if env is not None else dict(os.environ)
-    if os.name == "nt":
-        appdata = env_values.get("APPDATA")
-        base_dir = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    else:
-        xdg_config_home = env_values.get("XDG_CONFIG_HOME")
-        base_dir = Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"
-    return base_dir / USER_CONFIG_DIRNAME / USER_CONFIG_FILENAME
+    return _config_base_dir(env_values) / USER_CONFIG_DIRNAME / USER_CONFIG_FILENAME
 
 
 def default_legacy_user_config_paths(env: dict[str, str] | None = None) -> list[Path]:
     env_values = env if env is not None else dict(os.environ)
-    if os.name == "nt":
-        appdata = env_values.get("APPDATA")
-        base_dir = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    else:
-        xdg_config_home = env_values.get("XDG_CONFIG_HOME")
-        base_dir = Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"
+    base_dir = _config_base_dir(env_values)
     return [base_dir / dirname / USER_CONFIG_FILENAME for dirname in LEGACY_USER_CONFIG_DIRNAMES]
 
 
@@ -169,3 +168,12 @@ def _load_legacy_user_env_values(
         for key, value in parse_dotenv(path).items():
             legacy_values.setdefault(key, value)
     return legacy_values
+
+
+def _config_base_dir(env_values: dict[str, str]) -> Path:
+    if os.name == "nt":
+        appdata = env_values.get("APPDATA")
+        return Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+
+    xdg_config_home = env_values.get("XDG_CONFIG_HOME")
+    return Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"

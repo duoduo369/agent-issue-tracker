@@ -7,7 +7,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 from feishu_issue_tracker.backend import PersistenceBackend, PersistenceBackendError
-from feishu_issue_tracker.config import GIT_REPO_PATH_KEY, ResolvedConfig, resolve_config
+from feishu_issue_tracker.config import (
+    GIT_BRANCH_KEY,
+    GIT_REPO_PATH_KEY,
+    ResolvedConfig,
+    resolve_config,
+)
 from feishu_issue_tracker.feishu_backend import FeishuPersistenceBackend
 from feishu_issue_tracker.feishu_cli import LarkCliError
 from feishu_issue_tracker.git_backend import GitPersistenceBackend
@@ -32,21 +37,20 @@ def main(argv: list[str] | None = None) -> int:
         backend_name = resolved_config.backend
 
         if resolved_config.missing_keys:
+            payload = {
+                "ok": False,
+                "error": "missing_config",
+                "missing_keys": resolved_config.missing_keys,
+                "user_config_path": str(resolved_config.user_config_path),
+                "hint": (
+                    "Set the missing keys via environment variables, the repo-root .env file, "
+                    "or the user-level config file. See .env.example."
+                ),
+            }
+            if resolved_config.backend:
+                payload["backend"] = resolved_config.backend
             print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "backend": resolved_config.backend,
-                        "error": "missing_config",
-                        "missing_keys": resolved_config.missing_keys,
-                        "user_config_path": str(resolved_config.user_config_path),
-                        "hint": (
-                            "Set the missing keys via environment variables, the repo-root .env file, "
-                            "or the user-level config file. See .env.example."
-                        ),
-                    },
-                    indent=2,
-                )
+                json.dumps(payload, indent=2)
             )
             return 2
 
@@ -180,7 +184,10 @@ def resolve_backend(*, resolved_config: ResolvedConfig) -> PersistenceBackend:
     if resolved_config.backend == "feishu":
         return FeishuPersistenceBackend()
     if resolved_config.backend == "git":
-        return GitPersistenceBackend(tracker_repo_path=Path(resolved_config.values[GIT_REPO_PATH_KEY]))
+        return GitPersistenceBackend(
+            tracker_repo_path=Path(resolved_config.values[GIT_REPO_PATH_KEY]),
+            branch=resolved_config.values.get(GIT_BRANCH_KEY),
+        )
     raise ValueError(f"Unsupported backend {resolved_config.backend!r}.")
 
 

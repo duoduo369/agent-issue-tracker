@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from feishu_issue_tracker.cli import main, resolve_backend
-from feishu_issue_tracker.config import GIT_REPO_PATH_KEY, ResolvedConfig
+from feishu_issue_tracker.config import BACKEND_KEY, GIT_BRANCH_KEY, GIT_REPO_PATH_KEY, ResolvedConfig
 from feishu_issue_tracker.git_backend import GitPersistenceBackend
 from feishu_issue_tracker.push_service import PushPreview
 from feishu_issue_tracker.pull_service import PullConfirmationRequired, PullExecutionResult, PullPreview
@@ -37,13 +37,14 @@ class CliTests(unittest.TestCase):
             payload = stdout.getvalue()
             self.assertIn(".env.example", payload)
             self.assertIn('"user_config_path"', payload)
-            self.assertIn("AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN", payload)
+            self.assertIn(BACKEND_KEY, payload)
 
     def test_push_preview_does_not_run_doctor_before_preview(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
+                "AGENT_ISSUE_TRACKER_BACKEND=feishu\n"
                 "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
@@ -87,6 +88,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
+                "AGENT_ISSUE_TRACKER_BACKEND=feishu\n"
                 "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
@@ -136,6 +138,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
+                "AGENT_ISSUE_TRACKER_BACKEND=feishu\n"
                 "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
@@ -182,6 +185,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(tempdir)
             (repo_root / ".git").mkdir()
             (repo_root / ".env").write_text(
+                "AGENT_ISSUE_TRACKER_BACKEND=feishu\n"
                 "AGENT_ISSUE_TRACKER_FEISHU_ROOT_FOLDER_TOKEN=root-folder\n",
                 encoding="utf-8",
             )
@@ -226,11 +230,18 @@ class CliTests(unittest.TestCase):
     def test_resolves_git_backend_cleanly(self) -> None:
         resolved = ResolvedConfig(
             backend="git",
-            values={GIT_REPO_PATH_KEY: "D:/tracker"},
-            sources={GIT_REPO_PATH_KEY: "env"},
+            values={
+                GIT_REPO_PATH_KEY: "D:/tracker",
+                GIT_BRANCH_KEY: "issue-sync",
+            },
+            sources={
+                GIT_REPO_PATH_KEY: "env",
+                GIT_BRANCH_KEY: "env",
+            },
             missing_keys=[],
         )
 
         backend = resolve_backend(resolved_config=resolved)
 
         self.assertIsInstance(backend, GitPersistenceBackend)
+        self.assertEqual(backend.branch, "issue-sync")
