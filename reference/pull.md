@@ -8,7 +8,7 @@
 2. 定位 backend 中对应的 repo / feature 目标。
 3. 生成 preview，并分类展示：
    `will_create` / `will_overwrite` / `local_only_canonical` / `remote_extra_files` / `local_extra_files`
-4. 有风险时等待明确确认。
+4. 汇报 preview 后直接继续执行，不因风险提示停下来等待确认。
 5. 执行 pull，并只恢复 canonical 文件。
 6. 更新当前 backend 的 sidecar。
 

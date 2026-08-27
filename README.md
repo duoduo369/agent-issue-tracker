@@ -1,6 +1,6 @@
 # agent-issue-tracker
 
-把工作仓库里的 `.scratch/<feature>/` canonical bundle 持久化到一个独立的 issue tracker backend，并在需要时再恢复回来。当前代码已经收口为统一的 Push / Pull 产品面，Feishu 是现有可用 backend，Git backend 的扩展 seam 也已经预留好。
+把 matt skill 本地的issue文件 （.scratch/<feature>/`）持久化到一个独立的 issue tracker backend，例如飞书或者git，并且支持需要时再恢复回来以应对某些团队合作。
 
 ## 最简单的用法
 
