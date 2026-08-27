@@ -98,7 +98,6 @@ class PushServiceTests(unittest.TestCase):
                 "FEISHU_ISSUE_TRACKER_REPO_NAME": "env",
             },
             missing_keys=[],
-            user_config_path=self.repo_root / ".unused-user-config.json",
         )
 
     def tearDown(self) -> None:
