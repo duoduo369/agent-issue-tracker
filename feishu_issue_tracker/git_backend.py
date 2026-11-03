@@ -328,6 +328,8 @@ class GitPersistenceBackend:
             cwd=self.tracker_repo_path,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if not check or completed.returncode == 0:
