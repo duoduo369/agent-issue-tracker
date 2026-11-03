@@ -7,4 +7,4 @@
 - 如果设置了 `AGENT_ISSUE_TRACKER_GIT_BRANCH`，运行时应先切到该分支；如果没设置，就沿用 tracker workspace 当前分支。
 - `pull` 的 preview 必须先刷新 tracker workspace，再让用户确认；不要让用户对过期状态做确认。
 - `push` 在远端先行变化时，会先用 rebase 更新 tracker workspace，再重试 push。
-- `pull` 的覆盖方向以 tracker workspace 中最新持久化内容为准，只会恢复 canonical 文件。
+- `pull` 的覆盖方向以 tracker workspace 中最新持久化内容为准，会恢复 `.scratch/<feature>/` 下除 sidecar 外的全部文件。

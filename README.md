@@ -29,13 +29,21 @@ AGENT_ISSUE_TRACKER_GIT_REPO_PATH=
 
 ## Canonical Bundle
 
-只会处理这些文件：
+会处理 `.scratch/<feature>/` 下除 backend sidecar 之外的全部文件。
+
+这包括但不限于：
 
 - `spec.md`
 - `map.md`
 - `issues/*.md`
+- `README.md`
+- `CONTEXT.md`
+- `maps/*.md`
+- `tickets/*.md`
+- `research/*`
+- `handoffs/*`
 
-其他文件会在 preview 里作为 extra 提醒，但不会被默认同步。
+不会默认同步的只有 sidecar，例如 `.issue-tracker.<backend>.json` 和 `.feishu-sync.json`。
 
 ## 文档分层
 

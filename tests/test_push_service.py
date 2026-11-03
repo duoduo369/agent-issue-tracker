@@ -32,7 +32,7 @@ class FakeBackend:
         self.created_folders: list[tuple[str, str]] = []
         self.child_folders: dict[tuple[str, str], str] = {}
         self.status_result = FakeStatusResult(
-            local_only=["spec.md"],
+            local_only=["draft.txt", "spec.md"],
             modified=["issues/01.md"],
             unchanged=["map.md"],
             remote_only=["issues/02.md", "notes.txt"],
@@ -127,7 +127,7 @@ class PushServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def test_preview_classifies_canonical_and_extra_files(self) -> None:
+    def test_preview_treats_all_feature_files_as_sync_content(self) -> None:
         preview = self.service.preview_push(
             repo_root=self.repo_root,
             cwd=self.feature_dir,
@@ -136,11 +136,12 @@ class PushServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(preview.feature_name, "feature-a")
-        self.assertEqual(preview.will_create, ["spec.md"])
+        self.assertEqual(preview.canonical_files, ["draft.txt", "issues/01.md", "map.md", "spec.md"])
+        self.assertEqual(preview.will_create, ["draft.txt", "spec.md"])
         self.assertEqual(preview.will_overwrite, ["issues/01.md"])
-        self.assertEqual(preview.remote_only_canonical, ["issues/02.md"])
-        self.assertEqual(preview.remote_extra_files, ["notes.txt"])
-        self.assertEqual(preview.local_extra_files, ["draft.txt"])
+        self.assertEqual(preview.remote_only_canonical, ["issues/02.md", "notes.txt"])
+        self.assertEqual(preview.remote_extra_files, [])
+        self.assertEqual(preview.local_extra_files, [])
         self.assertTrue(preview.confirmation_required)
         self.assertEqual(preview.backend_name, "feishu")
         self.assertEqual(preview.tracker_feature_locator, "root-folder/remote-repo/feature-a")
@@ -169,9 +170,9 @@ class PushServiceTests(unittest.TestCase):
         self.assertEqual(result.preview.resolved_repo_name, "remote-repo")
         self.assertEqual(
             self.backend.delete_calls,
-            [("root-folder/remote-repo/feature-a", ("issues/02.md",))],
+            [("root-folder/remote-repo/feature-a", ("issues/02.md", "notes.txt"))],
         )
-        self.assertEqual(result.push_result["summary"]["deleted_remote"], 1)
+        self.assertEqual(result.push_result["summary"]["deleted_remote"], 2)
         self.assertEqual(self.backend.push_calls[0][1], "root-folder/remote-repo/feature-a")
         sidecar = FeatureSidecar.load(self.sidecar_path)
         self.assertEqual(sidecar.backend_name, "feishu")
@@ -237,3 +238,50 @@ class PushServiceTests(unittest.TestCase):
 
         self.assertEqual(preview.resolved_repo_name, "remote-repo")
         self.assertEqual(self.backend.status_calls[0][1], "root-folder/remote-repo/feature-a")
+
+    def test_preview_treats_wayfinder_paths_as_canonical(self) -> None:
+        wayfinder_dir = self.repo_root / ".scratch" / "wayfinder-a"
+        (wayfinder_dir / "maps").mkdir(parents=True)
+        (wayfinder_dir / "tickets").mkdir(parents=True)
+        (wayfinder_dir / "research").mkdir(parents=True)
+        (wayfinder_dir / "README.md").write_text("# tracker\n", encoding="utf-8")
+        (wayfinder_dir / "CONTEXT.md").write_text("# context\n", encoding="utf-8")
+        (wayfinder_dir / "maps" / "2026-08-19-map.md").write_text("# map\n", encoding="utf-8")
+        (wayfinder_dir / "tickets" / "WF-CD-001.md").write_text("# ticket\n", encoding="utf-8")
+        (wayfinder_dir / "research" / "facts.md").write_text("# facts\n", encoding="utf-8")
+        (wayfinder_dir / "notes.txt").write_text("extra\n", encoding="utf-8")
+
+        self.backend.child_folders[("root-folder/remote-repo", "wayfinder-a")] = (
+            "root-folder/remote-repo/wayfinder-a"
+        )
+        self.backend.status_result = FakeStatusResult(
+            local_only=["CONTEXT.md", "README.md", "notes.txt"],
+            modified=["tickets/WF-CD-001.md"],
+            unchanged=["maps/2026-08-19-map.md", "research/facts.md"],
+            remote_only=["handoffs/to-fc.md"],
+        )
+
+        preview = self.service.preview_push(
+            repo_root=self.repo_root,
+            cwd=wayfinder_dir,
+            feature_name=None,
+            resolved_config=self.config,
+        )
+
+        self.assertEqual(
+            preview.canonical_files,
+            [
+                "CONTEXT.md",
+                "README.md",
+                "maps/2026-08-19-map.md",
+                "notes.txt",
+                "research/facts.md",
+                "tickets/WF-CD-001.md",
+            ],
+        )
+        self.assertEqual(preview.will_create, ["CONTEXT.md", "README.md", "notes.txt"])
+        self.assertEqual(preview.will_overwrite, ["tickets/WF-CD-001.md"])
+        self.assertEqual(preview.unchanged, ["maps/2026-08-19-map.md", "research/facts.md"])
+        self.assertEqual(preview.remote_only_canonical, ["handoffs/to-fc.md"])
+        self.assertEqual(preview.remote_extra_files, [])
+        self.assertEqual(preview.local_extra_files, [])

@@ -1,10 +1,10 @@
 ---
 name: push-to-issue-tracker
-description: "Preview and push one `.scratch/<feature>` canonical bundle to the configured issue tracker backend."
+description: "Preview and push one `.scratch/<feature>` bundle to the configured issue tracker backend."
 disable-model-invocation: true
 ---
 
-在用户明确要求把本地 `.scratch/<feature>/` canonical bundle 推送到 issue tracker 时使用。
+在用户明确要求把本地 `.scratch/<feature>/` bundle 推送到 issue tracker 时使用。
 
 先阅读：
 
@@ -35,7 +35,7 @@ disable-model-invocation: true
   - `remote_only_canonical`
   - `remote_extra_files`
   - `local_extra_files`
-- 明确提醒：只会推送 canonical 文件，也就是 `spec.md`、`map.md` 和 `issues/*.md`。
+- 明确提醒：会推送 `.scratch/<feature>/` 下除 sidecar 外的全部文件。sidecar 例如 `.issue-tracker.<backend>.json` 和 `.feishu-sync.json` 不会被推送。
 
 4. 直接执行 push。
 

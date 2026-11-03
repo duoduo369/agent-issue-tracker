@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath, PureWindowsPath
 
 
 class FeatureResolutionError(ValueError):
@@ -64,40 +65,37 @@ class ScratchLayoutProvider:
 
     def collect_canonical_files(self, feature_dir: Path) -> list[CanonicalFile]:
         files: list[CanonicalFile] = []
-        for filename in ("spec.md", "map.md"):
-            candidate = feature_dir / filename
-            if candidate.is_file():
-                files.append(CanonicalFile(rel_path=filename, absolute_path=candidate))
-
-        issues_dir = feature_dir / "issues"
-        if issues_dir.is_dir():
-            for issue_file in sorted(issues_dir.glob("*.md")):
+        if not feature_dir.exists():
+            return files
+        for path in sorted(feature_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            rel_path = path.relative_to(feature_dir).as_posix()
+            if self.is_canonical_rel_path(rel_path):
                 files.append(
-                    CanonicalFile(
-                        rel_path=issue_file.relative_to(feature_dir).as_posix(),
-                        absolute_path=issue_file,
-                    )
+                    CanonicalFile(rel_path=rel_path, absolute_path=path)
                 )
 
         return sorted(files, key=lambda item: item.rel_path)
 
     def collect_local_extra_files(self, feature_dir: Path) -> list[str]:
-        if not feature_dir.exists():
-            return []
-        extras: list[str] = []
-        for path in sorted(feature_dir.rglob("*")):
-            if not path.is_file():
-                continue
-            rel_path = path.relative_to(feature_dir).as_posix()
-            if self.is_canonical_rel_path(rel_path) or self.is_sidecar_rel_path(rel_path):
-                continue
-            extras.append(rel_path)
-        return extras
+        del feature_dir
+        return []
 
     def is_canonical_rel_path(self, rel_path: str) -> bool:
-        if rel_path in {"spec.md", "map.md"}:
-            return True
-        return rel_path.startswith("issues/") and rel_path.count("/") == 1 and rel_path.endswith(".md")
+        candidate = PurePosixPath(rel_path)
+        windows_candidate = PureWindowsPath(rel_path)
+        if (
+            not rel_path
+            or candidate.is_absolute()
+            or windows_candidate.is_absolute()
+            or windows_candidate.drive
+            or "\\" in rel_path
+        ):
+            return False
+        if any(part in {"", ".", ".."} for part in candidate.parts):
+            return False
+        return not self.is_sidecar_rel_path(rel_path)
 
     def is_sidecar_rel_path(self, rel_path: str) -> bool:
         if rel_path == ".feishu-sync.json":
@@ -111,7 +109,7 @@ class ScratchLayoutProvider:
     def restore_destination(self, feature_dir: Path, rel_path: str) -> Path:
         if not self.is_canonical_rel_path(rel_path):
             raise ValueError(f"{rel_path!r} is not a canonical path.")
-        return feature_dir / Path(rel_path)
+        return feature_dir / Path(PurePosixPath(rel_path))
 
 
 def find_repo_root(start: Path) -> Path:

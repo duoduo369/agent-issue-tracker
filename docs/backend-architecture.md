@@ -7,7 +7,7 @@
 公共层负责这些稳定职责：
 
 - 从 source repo 解析 feature
-- 识别 canonical bundle
+- 识别 feature bundle（也就是 `.scratch/<feature>` 下除 sidecar 外的全部文件）
 - 为 preview 分类 create / overwrite / extras
 - 决定是否需要确认
 - 为 push / pull 做本地 staging 和恢复
@@ -33,7 +33,7 @@
 这个项目的核心是两层 I/O：
 
 1. `source repo <-> canonical staging`
-   这是公共 issue tracker 逻辑，决定什么算 canonical、怎样 preview、怎样恢复。
+   这是公共 issue tracker 逻辑，决定 feature bundle 包含哪些文件、怎样 preview、怎样恢复。
 2. `canonical staging <-> tracker workspace`
    这是 backend 逻辑，决定怎样定位、比较和持久化 backend 中的目标。
 

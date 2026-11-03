@@ -31,7 +31,7 @@ class FakeBackend:
         self.pull_calls: list[tuple[str, str, bool]] = []
         self.child_folders: dict[tuple[str, str], str] = {}
         self.status_result = FakeStatusResult(
-            local_only=["map.md"],
+            local_only=["draft.txt", "map.md"],
             modified=["issues/01.md"],
             unchanged=["spec.md"],
             remote_only=["issues/02.md", "notes.txt"],
@@ -126,7 +126,7 @@ class PullServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def test_preview_classifies_remote_canonical_and_extra_files(self) -> None:
+    def test_preview_treats_remote_feature_files_as_sync_content(self) -> None:
         preview = self.service.preview_pull(
             repo_root=self.repo_root,
             cwd=self.feature_dir,
@@ -135,11 +135,12 @@ class PullServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(preview.feature_name, "feature-a")
-        self.assertEqual(preview.will_create, ["issues/02.md"])
+        self.assertEqual(preview.canonical_files, ["draft.txt", "issues/01.md", "issues/02.md", "map.md", "notes.txt", "spec.md"])
+        self.assertEqual(preview.will_create, ["issues/02.md", "notes.txt"])
         self.assertEqual(preview.will_overwrite, ["issues/01.md"])
-        self.assertEqual(preview.local_only_canonical, ["map.md"])
-        self.assertEqual(preview.remote_extra_files, ["notes.txt"])
-        self.assertEqual(preview.local_extra_files, ["draft.txt"])
+        self.assertEqual(preview.local_only_canonical, ["draft.txt", "map.md"])
+        self.assertEqual(preview.remote_extra_files, [])
+        self.assertEqual(preview.local_extra_files, [])
         self.assertIn("source of truth", preview.overwrite_hint)
         self.assertTrue(preview.confirmation_required)
         self.assertEqual(preview.backend_name, "feishu")
@@ -182,7 +183,7 @@ class PullServiceTests(unittest.TestCase):
             (self.feature_dir / "issues" / "02.md").read_text(encoding="utf-8"),
             "# remote issue 2\n",
         )
-        self.assertFalse((self.feature_dir / "notes.txt").exists())
+        self.assertEqual((self.feature_dir / "notes.txt").read_text(encoding="utf-8"), "remote extra\n")
         sidecar = FeatureSidecar.load(self.sidecar_path)
         self.assertEqual(sidecar.backend_name, "feishu")
         self.assertEqual(sidecar.feature_locator, "root-folder/remote-repo/feature-a")
@@ -197,7 +198,8 @@ class PullServiceTests(unittest.TestCase):
             confirm=True,
         )
 
-        self.assertEqual(result.preview.local_only_canonical, ["map.md"])
+        self.assertEqual(result.preview.local_only_canonical, ["draft.txt", "map.md"])
+        self.assertFalse((self.feature_dir / "draft.txt").exists())
         self.assertFalse((self.feature_dir / "map.md").exists())
         self.assertEqual((self.feature_dir / "spec.md").read_text(encoding="utf-8"), "# remote spec\n")
 

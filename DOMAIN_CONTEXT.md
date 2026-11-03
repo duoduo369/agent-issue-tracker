@@ -21,19 +21,19 @@ _Avoid_: tracker repo, remote repo
 _Avoid_: source repo, 本地镜像仓库
 
 **Canonical Bundle**:
-某个 feature 下被视为权威持久化内容的那组 issue tracker 文件。
-_Avoid_: scratch 目录, 整个 feature 目录, 备份
+某个 feature 下被视为权威持久化内容的那组 issue tracker 文件；在本项目里，等于 `.scratch/<feature>` 下除 backend sidecar 外的全部文件。
+_Avoid_: 只限 spec/map/issues 的子集, 备份
 
 **Feature**:
-`.scratch/<feature>` 下的一个命名单元，它的 canonical bundle 会作为一个整体被持久化。
+`.scratch/<feature>` 下的一个命名单元，它的 bundle 会作为一个整体被持久化。
 _Avoid_: branch, ticket 集合, project
 
 **Push**:
-把 source repo 中的 canonical bundle 推成当前 backend 里最新持久化状态的操作。
+把 source repo 中的 feature bundle 推成当前 backend 里最新持久化状态的操作。
 _Avoid_: 备份, 上传
 
 **Pull**:
-把当前 backend 中的 canonical bundle 恢复回 source repo，并以 backend 副本为最新持久化状态的操作。
+把当前 backend 中的 feature bundle 恢复回 source repo，并以 backend 副本为最新持久化状态的操作。
 _Avoid_: 下载, 合并
 
 **reference**:
