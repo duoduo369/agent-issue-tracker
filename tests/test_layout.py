@@ -12,9 +12,19 @@ class ScratchLayoutProviderTests(unittest.TestCase):
         (self.repo_root / ".git").mkdir()
         self.feature_dir = self.repo_root / ".scratch" / "feature-a"
         (self.feature_dir / "issues").mkdir(parents=True)
+        (self.feature_dir / "maps").mkdir(parents=True)
+        (self.feature_dir / "tickets").mkdir(parents=True)
+        (self.feature_dir / "research").mkdir(parents=True)
+        (self.feature_dir / "handoffs").mkdir(parents=True)
         (self.feature_dir / "spec.md").write_text("# spec\n", encoding="utf-8")
         (self.feature_dir / "map.md").write_text("# map\n", encoding="utf-8")
+        (self.feature_dir / "README.md").write_text("# tracker readme\n", encoding="utf-8")
+        (self.feature_dir / "CONTEXT.md").write_text("# context\n", encoding="utf-8")
         (self.feature_dir / "issues" / "01.md").write_text("# issue\n", encoding="utf-8")
+        (self.feature_dir / "maps" / "wf-map.md").write_text("# wf map\n", encoding="utf-8")
+        (self.feature_dir / "tickets" / "wf-001.md").write_text("# wf ticket\n", encoding="utf-8")
+        (self.feature_dir / "research" / "facts.md").write_text("# facts\n", encoding="utf-8")
+        (self.feature_dir / "handoffs" / "fc-owner.md").write_text("# handoff\n", encoding="utf-8")
         (self.feature_dir / "notes.txt").write_text("local only\n", encoding="utf-8")
         (self.feature_dir / ".issue-tracker.feishu.json").write_text("{}", encoding="utf-8")
         (self.feature_dir / ".issue-tracker.git.json").write_text("{}", encoding="utf-8")
@@ -55,13 +65,24 @@ class ScratchLayoutProviderTests(unittest.TestCase):
 
         self.assertEqual(
             [item.rel_path for item in canonical_files],
-            ["issues/01.md", "map.md", "spec.md"],
+            [
+                "CONTEXT.md",
+                "README.md",
+                "handoffs/fc-owner.md",
+                "issues/01.md",
+                "map.md",
+                "maps/wf-map.md",
+                "notes.txt",
+                "research/facts.md",
+                "spec.md",
+                "tickets/wf-001.md",
+            ],
         )
 
-    def test_lists_non_canonical_local_files_and_ignores_sidecar(self) -> None:
+    def test_ignores_sidecars_when_collecting_sync_files(self) -> None:
         extra_files = self.provider.collect_local_extra_files(self.feature_dir)
 
-        self.assertEqual(extra_files, ["notes.txt"])
+        self.assertEqual(extra_files, [])
 
     def test_maps_canonical_issue_file_to_restore_destination(self) -> None:
         destination = self.provider.restore_destination(
@@ -70,3 +91,18 @@ class ScratchLayoutProviderTests(unittest.TestCase):
         )
 
         self.assertEqual(destination, self.feature_dir / "issues" / "02.md")
+
+    def test_maps_wayfinder_ticket_file_to_restore_destination(self) -> None:
+        destination = self.provider.restore_destination(
+            self.feature_dir,
+            "tickets/WF-CD-001.md",
+        )
+
+        self.assertEqual(destination, self.feature_dir / "tickets" / "WF-CD-001.md")
+
+    def test_rejects_sidecar_restore_destination(self) -> None:
+        with self.assertRaises(ValueError):
+            self.provider.restore_destination(
+                self.feature_dir,
+                ".issue-tracker.git.json",
+            )
